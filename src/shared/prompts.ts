@@ -41,6 +41,26 @@ function personaDirection(character: Character): string {
   return `Character meme personality brief — behavior guidance, not age, wardrobe or drawing-style instructions: ${brief}\nUse this brief to choose the character’s motivation, speech rhythm and comedic reversal within the selected reaction. Show a precise contrast between what the character tries to project and what the gesture or expression gives away, when that fits this beat. Preserve the established age, body design and outfit; personality never authorizes a costume or identity change. The supplied action, staging and intensity remain the concrete shot direction. Do not force every reaction to become the same smug face: quiet affection, embarrassment and calm pauses can reveal this personality too. This brief is context to interpret, not extra lettering to render.`;
 }
 
+function signatureMotifDirection(character: Character): string {
+  const motifs = cleanProse(character.signatureMotifs);
+  if (!motifs) return '';
+  return `Optional recurring prop motifs supplied by the user: ${motifs}\nApply these only to props already requested by the action or an enabled mini-scene, choosing one compatible shape, color or small packaging detail. Do not add unrelated objects just to display a motif. If no suitable prop is requested, omit the motif instead of introducing one. Preserve the established age, body design, identity and outfit; prop motifs do not authorize new anatomy, costume changes or replacement identity accessories. Follow the outfit authority stated above; motifs never override the selected outfit authority. These notes are visual context, not lettering to render.`;
+}
+
+function miniSceneDirection(reaction: Reaction): string {
+  const scene = reaction.miniScene;
+  if (!scene?.enabled) return '';
+  const setup = cleanProse(scene.setup), reveal = cleanProse(scene.reveal), prop = cleanProse(scene.prop);
+  if (!setup && !reveal && !prop) return '';
+  return [
+    'Optional mini-scene: one frozen readable moment, not a sequence or separate panels. Treat setup and reveal as context, not literal captions or lettering to add. The selected staging and hand interaction rules still govern; do not introduce a viewer hand where the selected mode disallows it.',
+    setup ? `Situation setup: ${setup}` : '',
+    reveal ? `Situation reveal: ${reveal}` : '',
+    prop ? `Main prop: ${prop}` : '',
+    'Show the contradiction through the relationship between the requested posture and the permitted prop, not through extra explanatory words. Use one main object or one small group of the same object; keep the face, connected hands and authoritative costume details readable. Leave blank fields unspecified with no extra invented detail. Do not add a room background, additional characters or secondary storytelling objects unless explicitly required by the supplied situation. Keep the single-image, selected-framing and selected-lettering requirements intact.',
+  ].filter(Boolean).join('\n');
+}
+
 function letteringDirection(caption?: Caption): string {
   // An omitted caption is the legacy text-free image path, even if a reaction
   // now recommends native lettering. Callers opt in with resolved settings.
@@ -87,12 +107,14 @@ export function buildStickerPrompt(character: Character, reaction: Reaction, sty
     identityRule,
     outfitAuthority(character),
     personaDirection(character),
+    signatureMotifDirection(character),
     `Use only this selected visual style for the entire set: ${cleanProse(style.prompt)}`,
     `Selected staging — this determines camera distance, crop and subject scale even if the reference uses different framing: ${getComposition(reaction).prompt}`,
     `Selected interaction — the selected staging has priority over interaction, intensity and action wording: ${getInteraction(reaction).prompt}`,
     intensityDirection(reaction),
     reaction.intent?.trim() ? `Audience feeling and chat use, not lettering to render: ${cleanProse(reaction.intent)}` : '',
     `Draw this one concrete action and expression: ${cleanProse(reaction.action)}`,
+    miniSceneDirection(reaction),
     'Capture the clearest single instant of the reaction: one dominant visual joke or emotional beat. A dynamic action is one frozen pose, not a sequence. Body posture, silhouette and object interaction must carry the emotion as well as the face. Keep the eyes and mouth readable; closed, sleepy, deadpan or asymmetrical eyes are valid when the action calls for them. If the action suggests a conflicting crop or disallowed contact, preserve its emotion and adapt the gesture to the selected staging and interaction. Hands have simple coherent anatomy, with a clear owner and connected wrist; no duplicate limbs. Effects may support the chosen beat, but should not compete with the gesture or become a repeated heart-and-sparkle template.',
     stagingBoundary(reaction),
     stickerComposition,

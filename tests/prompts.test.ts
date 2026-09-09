@@ -12,7 +12,7 @@ const character: Character = {
 };
 
 test('catalog packs resolve to unique, selectable reactions with clear provenance', () => {
-  assert.equal(catalog.reactions.length, 64);
+  assert.equal(catalog.reactions.length, 70);
   assert.equal(new Set(catalog.reactions.map(item => item.id)).size, catalog.reactions.length);
   assert.equal(catalog.styles.length, 3);
   const sourceIds = new Set(catalog.sources.map(item => item.id));
@@ -368,5 +368,83 @@ test('persona starter retains the original sixty and mixes native words, editabl
   for (const preset of catalog.personas) {
     assert.ok(preset.brief.length > 40 && preset.brief.length <= 1200, preset.id);
     assert.doesNotMatch(preset.brief, /mesugaki|loli|schoolgirl|seduct|erotic|雌小鬼|未成年/i);
+  }
+});
+
+test('mini-scene directions are opt-in, single-image context and respect staging, hands and text mode', () => {
+  const reaction: Reaction = { ...catalog.reactions[0], compositionId: 'fullbody', interactionId: 'observe', miniScene: { enabled: true, setup: 'Wants to appear unconcerned.', reveal: 'Has quietly kept the best seat for the viewer.', prop: 'One small heart-shaped seat cushion.' } };
+  const prompt = buildStickerPrompt(character, reaction, catalog.styles[0]);
+  for (const value of [reaction.miniScene!.setup, reaction.miniScene!.reveal, reaction.miniScene!.prop]) assert.ok(prompt.includes(value));
+  assert.match(prompt, /one frozen.*moment.*not.*separate panels/i);
+  assert.match(prompt, /selected staging.*hand.*rules.*still govern/i);
+  assert.match(prompt, /full-body wide framing/i);
+  assert.match(prompt, /do not introduce an off-screen viewer hand/i);
+  assert.match(prompt, /no text.*no letters/i);
+  assert.match(prompt, /context.*not.*literal.*lettering/i);
+  const generated = buildStickerPrompt(character, reaction, catalog.styles[0], sampleCaption);
+  assert.ok(generated.includes(JSON.stringify(sampleCaption.text)));
+  assert.doesNotMatch(generated, /no text|no letters|no captions|no speech bubbles/i);
+});
+
+test('disabled and empty mini-scenes preserve legacy prompts without invented situation details', () => {
+  const reaction: Reaction = { ...catalog.reactions[0], miniScene: { enabled: false, setup: 'PRIVATE_SETUP', reveal: 'PRIVATE_REVEAL', prop: 'PRIVATE_PROP' } };
+  const baseline = buildStickerPrompt(character, { ...reaction, miniScene: undefined }, catalog.styles[0]);
+  assert.equal(buildStickerPrompt(character, reaction, catalog.styles[0]), baseline);
+  assert.equal(buildStickerPrompt(character, { ...reaction, miniScene: { enabled: true, setup: ' \n ', reveal: '', prop: '' } }, catalog.styles[0]), baseline);
+  const partial = buildStickerPrompt(character, { ...reaction, miniScene: { enabled: true, setup: 'Quietly eager to see the viewer.', reveal: '', prop: '' } }, catalog.styles[0]);
+  assert.match(partial, /Quietly eager to see the viewer/);
+  assert.doesNotMatch(partial, /PRIVATE_|Situation reveal:|Main prop:/);
+  assert.match(partial, /blank fields.*no extra.*detail/i);
+});
+
+test('signature motifs decorate requested sticker props without rewriting identity, clothing or design sheets', () => {
+  const customized = { ...character, signatureMotifs: 'gold heart-shaped cookies and cushions, small black ribbon packaging' };
+  const sticker = buildStickerPrompt(customized, catalog.reactions[0], catalog.styles[0]);
+  assert.ok(sticker.includes(customized.signatureMotifs));
+  assert.match(sticker, /props already requested.*action.*enabled mini-scene/i);
+  assert.match(sticker, /do not add.*objects.*just to display/i);
+  assert.match(sticker, /preserve.*age.*body.*identity.*outfit/i);
+  assert.match(sticker, /original character reference.*outfit authority/i);
+  assert.equal(buildAnchorPrompt(customized, catalog.styles[0]), buildAnchorPrompt(character, catalog.styles[0]));
+  assert.equal(buildCharacterPrompt(customized), buildCharacterPrompt(character));
+  assert.equal(buildNijiPrompt(customized), buildNijiPrompt(character));
+  assert.equal(buildStickerPrompt({ ...character, signatureMotifs: ' \n ' }, catalog.reactions[0], catalog.styles[0]), buildStickerPrompt(character, catalog.reactions[0], catalog.styles[0]));
+});
+
+test('signature motifs respect an explicitly selected custom outfit instead of restoring reference clothing', () => {
+  const customized: Character = { ...character, outfitMode: 'custom', outfit: 'a navy raincoat with yellow boots', signatureMotifs: 'gold heart shapes on requested props' };
+  const prompt = buildStickerPrompt(customized, catalog.reactions[0], catalog.styles[0]);
+  assert.ok(prompt.includes(customized.outfit));
+  assert.ok(prompt.includes(customized.signatureMotifs!));
+  assert.match(prompt, /user.*outfit text.*overrides.*reference clothing/i);
+  assert.match(prompt, /follow the outfit authority stated above.*motifs never override the selected outfit authority/i);
+  assert.doesNotMatch(prompt, /keep the original reference authoritative|original character reference.*outfit authority|original controls clothes/i);
+});
+
+test('mini-theater adds six optional prop situations while retaining all original sixty-four recipes', () => {
+  const old = catalog.packs.find(item => item.id === 'all64')!;
+  const all = catalog.packs.find(item => item.id === 'all70')!;
+  const pack = catalog.packs.find(item => item.id === 'mini-theater12')!;
+  assert.ok(all, 'all seventy reactions must be selectable');
+  assert.ok(pack, 'the mini-theater starter must be selectable');
+  assert.equal(old.reactionIds.length, 64);
+  assert.equal(all.reactionIds.length, 70);
+  const newIds = ['cookie-alibi', 'gift-custodian', 'lid-deadlock', 'secret-standby', 'umbrella-bias', 'reserved-cushion'];
+  assert.deepEqual(all.reactionIds.filter(id => !old.reactionIds.includes(id)), newIds);
+  assert.equal(pack.reactionIds.length, 12);
+  assert.ok(newIds.every(id => pack.reactionIds.includes(id)));
+  assert.equal(pack.reactionIds.filter(id => old.reactionIds.includes(id)).length, 6);
+  const newRecipes = newIds.map(id => catalog.reactions.find(item => item.id === id)!);
+  assert.equal(new Set(newRecipes.map(item => item.compositionId)).size, 6);
+  assert.deepEqual(new Set(newRecipes.map(item => item.textMode)), new Set(['none', 'overlay', 'generated']));
+  const propWords: Record<string, RegExp> = { 'cookie-alibi': /\b(?:cookies?|crumbs?)\b/i, 'gift-custodian': /\b(?:gifts?|pillows?)\b/i, 'lid-deadlock': /\b(?:jar|lid)\b/i, 'secret-standby': /\bbook\b|upside.down/i, 'umbrella-bias': /\b(?:umbrella|rain|wet)\b/i, 'reserved-cushion': /\bcushion\b|reserved seat/i };
+  for (const item of newRecipes) {
+    assert.equal(item.miniScene?.enabled, true);
+    assert.ok(item.miniScene!.setup && item.miniScene!.reveal && item.miniScene!.prop);
+    assert.ok(item.miniScene!.setup.length <= 240 && item.miniScene!.reveal.length <= 240 && item.miniScene!.prop.length <= 160, item.id);
+    assert.doesNotMatch(item.action, propWords[item.id], item.id);
+    const disabled = buildStickerPrompt(character, { ...item, miniScene: { ...item.miniScene!, enabled: false } }, catalog.styles[0]);
+    assert.doesNotMatch(disabled, propWords[item.id], item.id);
+    assert.doesNotMatch(buildStickerPrompt(character, item, catalog.styles[0]), /maid outfit|whale species|server busy|rate limit|demon horns/i);
   }
 });

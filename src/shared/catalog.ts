@@ -45,6 +45,9 @@ const reactionCompositions: Record<string, CompositionId> = {
   'tiny-confident': 'fullbody', 'thoughtful-sulk': 'halfbody',
   'smug-challenge': 'halfbody', 'caught-bluff': 'fullbody',
   'little-victory': 'action', 'quiet-softening': 'prop',
+  'cookie-alibi': 'halfbody', 'gift-custodian': 'fullbody',
+  'lid-deadlock': 'action', 'secret-standby': 'peek',
+  'umbrella-bias': 'prop', 'reserved-cushion': 'scene',
 };
 
 // Older projects have no staging field. Resolve their stable reaction IDs to
@@ -199,6 +202,39 @@ export const personas: PersonaPreset[] = [
   { id: 'dry-deadpan', name: '淡定吐槽役', description: '脸上已经下班，身体却还在很认真地犯傻。', brief: '成年角色。核心动机是省点力气、保持从容，但看到朋友需要帮忙仍会出手。话少、停顿准确，语气平静，常用一句短评接住荒诞局面。喜剧反差是半睁的眼和毫无波澜的嘴，配上非常努力、尴尬或离谱的身体姿势；先保持两秒镇定，再轻轻塌下来。用眼神、侧身和道具关系讲笑点，避免每次都换成怒吼或巨大闪亮眼睛。' },
 ];
 
+const miniSceneReactions: Reaction[] = [
+  {
+    ...reaction('cookie-alibi', '一本正经地露馅', '才没偷吃', '角色小剧场', '🍪', 'Straighten the torso with exaggerated dignity and raise one index finger beside the shoulder as if making a solemn point. Keep the other hand tucked behind the waist, puff just one cheek, hold the lips tightly together and glance sideways at the viewer with one raised eyebrow. Let the stiff shoulders betray a very unconvincing attempt to act innocent.', ['偷吃露馅', '嘴硬否认', '半身小剧场'], [], true),
+    interactionId: 'comic', intensity: 2, intent: '被熟悉的人抓包，仍要郑重其事地否认；让对方一眼看穿，又忍不住想继续逗。', textMode: 'generated', captionStyleId: 'handwritten',
+    miniScene: { enabled: true, setup: '偷吃点心刚被对方发现，角色还想装出完全无辜的样子。', reveal: '嘴巴抿得紧紧的，嘴角却粘着几颗明显的饼干屑；背在腰后的手也没藏好那块咬过的饼干。表情越郑重，露馅越好笑。', prop: '一块咬过的简单饼干，加几颗小图也看得清的碎屑。可采用相容的角色专属形状；不加盘子或其他零食。' },
+  },
+  {
+    ...reaction('gift-custodian', '保管着就不想还了', '替你保管', '角色小剧场', '🎁', 'Sit with both feet planted forward and the knees turned slightly outward, curve both connected forearms snugly inward in a possessive protective embrace. Turn one shoulder away from the viewer, lower the chin and close the eyes into two satisfied little arcs, with an almost imperceptible happy smile. The compact seated silhouette looks much too comfortable to let go.', ['护食式保管', '抱紧心意', '全身小剧场'], [], true),
+    interactionId: 'comic', intensity: 2, intent: '喜欢得不肯松手，还要给自己找一个冠冕堂皇的理由；适合收到好东西或接住对方的心意。', textMode: 'overlay', captionStyleId: 'bubble',
+    miniScene: { enabled: true, setup: '对方想拿回礼物，角色却一本正经地说是在替对方好好保管。', reveal: '双臂把三只软圆的心形礼物抱枕紧紧搂在腿上，手指还在悄悄收紧。满足的小表情暴露了：这位保管员一个也不想还。', prop: '三只小巧柔软的心形礼物抱枕，抱成一团放在领口以下。沿用参考角色配色，最多点缀少量既有饰件图案。' },
+  },
+  {
+    ...reaction('lid-deadlock', '轻轻松松使出全力', '小事一桩', '角色小剧场', '🫙', 'Plant both feet far apart, bend the knees and lean the torso diagonally backward with visibly braced shoulders. Hold both cupped hands in front of the waist and turn them in opposite directions with naturally connected elbows. Squeeze one eye shut, clamp the tiny mouth into a determined line and lift the opposite brow as if still trying to look casual.', ['逞强卡住', '求助前一秒', '完整动作'], [], true),
+    interactionId: 'comic', intensity: 3, intent: '明明已经使出全力，还要假装只是热身；适合任务卡住、轻敌后求助或逗对方接手。', textMode: 'generated', captionStyleId: 'comic',
+    miniScene: { enabled: true, setup: '角色自信地接下替对方开罐子的任务，还坚持说这件事轻轻松松。', reveal: '上面的手拼命拧罐盖，下面的手稳住罐身，盖子却纹丝不动。脸还想装随意，整个身体早已使出了全力。', prop: '一个朴素的小罐子，双手稳稳握住，拧紧的螺旋盖要大而清楚。不加标签、工具或其他物件。' },
+  },
+  {
+    ...reaction('secret-standby', '等到了还要装偶遇', '只是路过', '角色小剧场', '📖', 'Lean sideways with one shoulder leading, tuck the elbows close to the torso and hold the hands loosely in front of the waist. Turn the face back toward the viewer with suddenly attentive open eyes, lifted inner eyebrows and lips just beginning to smile. Keep the body trying to face away while the expression has already brightened at the viewer’s arrival.', ['装作偶遇', '悄悄等候', '探头小剧场'], [], true),
+    interactionId: 'observe', intensity: 2, intent: '等的人终于出现，身体还在装作恰巧经过，眼睛却已经亮了；适合重新上线和久等后的招呼。', textMode: 'overlay', captionStyleId: 'handwritten',
+    miniScene: { enabled: true, setup: '其实已经在附近等了好一会儿，却想把见面装成一次偶遇。', reveal: '假装看书，连手里的小书都拿反了，还从书侧偷偷探看对方。封面上醒目的简单图案倒着，目光也一直跟着来的人。', prop: '一本摊开的小书，封面用不含文字、上下不对称的简单图案，让拿反一眼可见。用书本本身形成探头遮挡，不加门框。' },
+  },
+  {
+    ...reaction('umbrella-bias', '把偏心藏在顺路里', '顺路而已', '角色小剧场', '☂️', 'Turn the torso slightly aside and extend one arm toward the viewer’s side with a naturally bent elbow, while the other hand rests low near the waist. Tilt the head the opposite way and look calmly away with a small restrained smile. Let the relaxed shoulders and deliberately off-center arm gesture express quiet care rather than a dramatic declaration.', ['偷偷关心', '偏心照顾', '无字也懂'], [], true),
+    interactionId: 'observe', intensity: 1, intent: '嘴上不提照顾，行动却明显偏向对方；适合关心朋友、缓和别扭或安静地说我在。', textMode: 'none', captionStyleId: 'round',
+    miniScene: { enabled: true, setup: '明明是专程陪对方走一段，却装作只是碰巧顺路。', reveal: '伞明显偏向看图人的一侧，角色自己的少量头发反而露在伞外。仅用三滴雨点说明这份偏心；原服装保持不变且干燥。', prop: '一把简单撑开的伞，向画外的看图人倾斜，露在伞外的头发旁加三滴独立雨点。不画雨景背景或另一个人。' },
+  },
+  {
+    ...reaction('reserved-cushion', '自己困了也给你留着', '给你留的', '角色小剧场', '🪑', 'Sit with both legs relaxed to one side, lean the torso into a sleepy sideways slump and keep one arm extended protectively along the ground beside the body. Rest the other hand loosely in the lap, lower the head and let the eyes close almost completely, retaining a tiny calm smile. The outstretched arm remains deliberately in place even as the rest of the pose grows drowsy.', ['安静等你', '留一个位置', '小情境'], [], true),
+    interactionId: 'observe', intensity: 1, intent: '没有催促，也没有热闹表态，只把身旁的位置一直留给对方；适合晚归、陪伴和邀请坐近一点。', textMode: 'none', captionStyleId: 'handwritten',
+    miniScene: { enabled: true, setup: '把身边舒服的位置留给对方，安静等着，也不想催促。', reveal: '自己已经困得点头，一只手却仍护着身旁空坐垫靠近自己的那一边。空着的位置让人看懂：还在等你过来坐。', prop: '角色身旁只放一个小空坐垫，可采用相容的角色专属形状。不加其他座位、家具或房间背景。' },
+  },
+];
+
 // Recommendations only: saved per-image caption settings always take priority.
 const textRecommendations: Record<string, Pick<Reaction, 'textMode' | 'captionStyleId'>> = {
   'thoughtful-sulk': { textMode: 'overlay', captionStyleId: 'handwritten' },
@@ -214,7 +250,8 @@ const textRecommendations: Record<string, Pick<Reaction, 'textMode' | 'captionSt
 const originalReactions = [...cute, ...chaos, ...daily, ...companion];
 const previousReactions = [...originalReactions, ...interactionReactions];
 const v4Reactions = [...previousReactions, ...bodyInteractionReactions];
-const reactions = [...v4Reactions, ...personaReactions].map(item => ({ ...item, ...textRecommendations[item.id] }));
+const v5Reactions = [...v4Reactions, ...personaReactions].map(item => ({ ...item, ...textRecommendations[item.id] }));
+const reactions = [...v5Reactions, ...miniSceneReactions];
 
 export const catalog: Catalog = {
   reactions,
@@ -231,6 +268,7 @@ export const catalog: Catalog = {
     { id: 'interaction12', name: '可爱犯规 12', description: '扑抱、摸头、递大花、软脸和理直气壮的小小一只；强互动穿插安静陪伴，7 种构图。原创编辑精选，非使用量排名。', reactionIds: ['hug-lunge', 'receive-headpat', 'flower-delivery', 'corner-check', 'cheek-pinch', 'tiny-boss', 'instant-pancake', 'heart-window', 'waao', 'rolling', 'blanket', 'thanks'] },
     { id: 'body-interaction12', name: '全身半身互动 12', description: '6 张全身＋6 张半身：踮脚找你、认真递茶、小个子护短和嘴硬思考，让双臂与身体一起传情。原创编辑精选，非热度排名。', reactionIds: ['viewer-offer', 'tiptoe-wave', 'tiny-confident', 'thoughtful-sulk', 'tiny-boss', 'waiting', 'thanks', 'hug-lunge', 'receive-headpat', 'head-tilt', 'shy', 'smug'] },
     { id: 'bratty12', name: '嘴硬小剧场 12', description: '挑衅→破功→小小得意→偷偷心软；4 张原生字、4 张后期字、4 张无字，混搭全身半身与道具。配合性格简要，演出你自己的角色。原创编辑精选。', reactionIds: ['smug-challenge', 'caught-bluff', 'little-victory', 'quiet-softening', 'thoughtful-sulk', 'tiny-confident', 'cheek-pinch', 'receive-headpat', 'blanket', 'deadpan', 'rolling', 'flower-delivery'] },
+    { id: 'mini-theater12', name: '角色小剧场 12', description: '6 个可关闭的小处境，穿插 6 张原有可爱：抱紧心意、偷吃露馅、逞强卡住与偷偷关心。用性格和专属物件画出自己的梗。', reactionIds: ['cookie-alibi', 'gift-custodian', 'lid-deadlock', 'secret-standby', 'umbrella-bias', 'reserved-cushion', 'hug-lunge', 'cheek-pinch', 'little-victory', 'quiet-softening', 'waao', 'thoughtful-sulk'] },
     { id: 'mixed12', name: '百变可爱 12', description: '从贴脸到全身，从跑跳到被窝：7 种构图交错，先试这套。编辑精选，非热度排名。', reactionIds: ['waao', 'hug', 'running', 'peek', 'flower', 'low-battery', 'desk-bang', 'blanket', 'victory', 'rolling', 'puffed-cheeks', 'busy'] },
     { id: 'cute12', name: '贴脸可爱 12', description: '偏好大头和软萌互动时选这套，也穿插半身、跪坐和道具。不是使用量排行榜。', reactionIds: cute.map(item => item.id) },
     { id: 'chaos12', name: '群聊发疯 12', description: '眼神死、假哭、拍桌、蠕动；一眼能接住情绪的反应精选。', reactionIds: chaos.map(item => item.id) },
@@ -238,7 +276,8 @@ export const catalog: Catalog = {
     { id: 'all48', name: '经典反应库 48', description: '保留原有四类和完整配方；每张仍可修改构图、互动与文案。', reactionIds: originalReactions.map(item => item.id) },
     { id: 'all56', name: '全部反应 56', description: '经典 48 张加上 8 张互动新作；自由组合强反应、幽默和安静可爱。建议先试少量。', reactionIds: previousReactions.map(item => item.id) },
     { id: 'all60', name: '全部反应 60', description: '保留前 56 张，再加 4 张半身与全身互动。每张都可自由修改构图、张力和文案。', reactionIds: v4Reactions.map(item => item.id) },
-    { id: 'all64', name: '全部反应 64', description: '保留前 60 张，加上挑衅、露馅、小小得意与安静心软；文字路径可逐张调整，角色性格简要也可自由编辑。', reactionIds: reactions.map(item => item.id) },
+    { id: 'all64', name: '全部反应 64', description: '保留前 60 张，加上挑衅、露馅、小小得意与安静心软；文字路径可逐张调整，角色性格简要也可自由编辑。', reactionIds: v5Reactions.map(item => item.id) },
+    { id: 'all70', name: '全部反应 70', description: '完整保留原有 64 张，再加 6 个可开关的小处境；单张选择无字、后期字或随图生成，按角色性格自由组合。', reactionIds: reactions.map(item => item.id) },
   ],
   sources: [
     { id: 'whale-static-2026', title: '2026 小鲸鱼 / DeepSeek 社区静态图案例', url: 'https://www.vgover.com/news/227900', checkedAt: '2026-09-09', evidence: '页面标注 2026-07-31；本次实际查看其中 5 张 JPEG 静态图，包括前景指向角色的手、仰脸叉腰的理直气壮反应、放大伸手与斜头半身，以及同一角色切换主客关系。提炼接触因果、近大远小和预期反转，不复制角色、画面或文字。摸头、软脸等新作是原创设计延伸；这些案例不能证明最高传播量或 QQ 使用排名。' },

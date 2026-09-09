@@ -5,6 +5,7 @@ import { captionStyles as sharedCaptionStyles, defaultCaptionFor, resolveCaption
 import { canResumeJob } from '../lib/jobs';
 import { Field, Status } from './Common';
 import CaptionEditor from './CaptionEditor';
+import MiniSceneEditor from './MiniSceneEditor';
 
 const intensityOptions: { value: Intensity; label: string; description: string }[] = [
   { value: 1, label: '轻轻的', description: '动作克制，留一点安静和害羞。' },
@@ -35,6 +36,7 @@ export default function StickerInspector({ reaction, compositions, interactions 
     {job && <div className="inspector-job-state"><Status status={job.status} />{job.asset && <span>{embedded ? '文字已在原图中' : job.asset.hasAlpha ? '含 Alpha' : '实色背景'}</span>}</div>}
     {localOverlay && job?.asset && <p className="field-hint preview-save-hint">这是排字草稿预览，保存后查看准确成品。</p>}
     <CaptionEditor caption={text} styles={captionStyles} job={job} onChange={onCaption} />
+    <MiniSceneEditor value={reaction.miniScene} onChange={miniScene => onReaction({ miniScene })} />
     <details className="performance-disclosure"><summary>镜头、互动与动作 <ChevronDown size={14} /></summary>
     <Field label="表情名称"><input value={reaction.name} maxLength={80} onChange={e => onReaction({ name: e.target.value })} /></Field>
     <Field label="镜头构图" hint={compositions.find(item => item.id === (reaction.compositionId || 'halfbody'))?.description || '旧配方默认半身，可自由切换。'}><select value={reaction.compositionId || 'halfbody'} onChange={e => onReaction({ compositionId: e.target.value as Reaction['compositionId'] })}>{compositions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>

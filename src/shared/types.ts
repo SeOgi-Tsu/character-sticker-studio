@@ -3,6 +3,7 @@ export interface Character {
   referenceAssetId?: string; anchorAssetId?: string;
   outfitMode?: 'reference' | 'custom';
   memePersona?: string;
+  signatureMotifs?: string;
 }
 export type TextMode = 'none' | 'overlay' | 'generated';
 export type CaptionStyleId = 'classic' | 'round' | 'handwritten' | 'brush' | 'bubble' | 'comic';
@@ -14,12 +15,14 @@ export interface Composition { id: CompositionId; name: string; description: str
 export type InteractionId = 'observe' | 'approach' | 'offer' | 'touch' | 'squish' | 'comic';
 export type Intensity = 1 | 2 | 3;
 export interface Interaction { id: InteractionId; name: string; description: string; prompt: string; }
+export interface MiniScene { enabled: boolean; setup: string; reveal: string; prop: string; }
 export interface Reaction {
   id: string; name: string; caption: string; category: string; action: string;
   tags: string[]; emoji: string; recommended?: boolean; sourceIds?: string[];
   compositionId?: CompositionId;
   interactionId?: InteractionId; intensity?: Intensity; intent?: string;
   textMode?: TextMode; captionStyleId?: CaptionStyleId;
+  miniScene?: MiniScene;
 }
 export interface Style { id: string; name: string; description: string; prompt: string; color: string; }
 export interface Pack { id: string; name: string; description: string; reactionIds: string[]; }

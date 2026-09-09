@@ -19,7 +19,7 @@ const object=(value:unknown):Record<string,any>=>{if(!value||typeof value!=='obj
 function text(value:unknown,fallback='',max=4000){if(value===undefined)return fallback;if(typeof value!=='string'||value.length>max)fail(`文字格式无效或超过 ${max} 字。`);return value as string;}
 function idText(value:unknown){const id=text(value,'',100);if(!/^[a-zA-Z0-9_-]+$/.test(id))fail('编号格式无效。');return id;}
 function requestId(value:unknown){return idText(value);}
-function stringArray(value:unknown,max=64){if(!Array.isArray(value)||value.length>max||value.some(v=>typeof v!=='string'||v.length>100))fail('选项列表格式无效。');return [...new Set(value as string[])];}
+function stringArray(value:unknown,max=200){if(!Array.isArray(value)||value.length>max||value.some(v=>typeof v!=='string'||v.length>100))fail('选项列表格式无效。');return [...new Set(value as string[])];}
 function safeSettings(config:ProviderSettings):ProviderSettings{const {apiKey,...safe}=config;return {...safe,hasApiKey:Boolean(apiKey)};}
 const defaults:ProviderSettings={provider:'openai',baseUrl:'https://api.openai.com/v1',model:'gpt-image-2',size:'1024x1024',concurrency:2};
 interface StoredJob { job:Job; settings?:ProviderSettings; referenceId?:string; secondaryReferenceId?:string; captionText?:string; }
@@ -74,6 +74,7 @@ export function createApp(options:AppOptions={}) {
   if(!['reference','custom'].includes(outfitMode))fail('服装依据需要选择沿用原图服装或按文字换装。');
   const result:Character={name:text(c.name,'新角色',100),description:text(c.description),identity:text(c.identity),outfit:text(c.outfit),personality:text(c.personality),outfitMode};
   if(c.memePersona!==undefined)result.memePersona=text(c.memePersona,'',1200);
+  if(c.signatureMotifs!==undefined)result.signatureMotifs=text(c.signatureMotifs,'',400);
   if(!stripAssets)for(const field of ['referenceAssetId','anchorAssetId'] as const){if(c[field]){const id=idText(c[field]);if(!store.get<Asset>('assets',id))fail('找不到角色参考图，请重新上传。');result[field]=id;}}
   return result;
  }
@@ -97,6 +98,12 @@ export function createApp(options:AppOptions={}) {
   if(r.intent!==undefined)result.intent=text(r.intent,'',160);
   if(r.textMode!==undefined){if(!['none','overlay','generated'].includes(r.textMode))fail('文字方式无效。');result.textMode=r.textMode;}
   if(r.captionStyleId!==undefined){if(!captionStyles.some(s=>s.id===r.captionStyleId))fail('文字风格不存在。');result.captionStyleId=r.captionStyleId;}
+  if(r.miniScene!==undefined){
+   const scene=object(r.miniScene);
+   if(typeof scene.enabled!=='boolean')fail('小剧场开关需要为布尔值。');
+   if(['setup','reveal','prop'].some(field=>typeof scene[field]!=='string'))fail('小剧场的情境、反差和道具需要填写文字，可留空。');
+   result.miniScene={enabled:scene.enabled,setup:text(scene.setup,'',240),reveal:text(scene.reveal,'',240),prop:text(scene.prop,'',160)};
+  }
   if(!partial){result.id=idText(r.id);result.tags=r.tags?stringArray(r.tags,20):[];}
   return result;
  }
