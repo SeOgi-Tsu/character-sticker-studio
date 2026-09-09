@@ -1,16 +1,17 @@
 import { lookup } from 'node:dns/promises';
 import { request as httpsRequest } from 'node:https';
 import type { IncomingMessage } from 'node:http';
-import type { ProviderSettings } from '../src/shared/types.ts';
+import type { ProviderSettings, RunningHubSettings, RunningHubNode } from '../src/shared/types.ts';
 
 export class ProviderError extends Error {
   constructor(message:string, readonly uncertain=false) { super(message); }
 }
-export interface GenerationInput { settings:ProviderSettings; prompt:string; reference?:Buffer; signal:AbortSignal; }
+export interface GenerationInput { settings:ProviderSettings; prompt:string; reference?:Buffer; signal:AbortSignal; remoteTaskId?:string; onRemoteTaskId?:(id:string)=>void|Promise<void>; }
 export interface ImageProvider { generate(input:GenerationInput):Promise<Buffer>; }
 export const providerDocs = {
  openai:'https://developers.openai.com/api/reference/resources/images',
  gemini:'https://ai.google.dev/gemini-api/docs/image-generation',
+ runninghub:'https://www.runninghub.ai/runninghub-api-doc-en/',
 };
 
 export function normalizeBaseUrl(value:string) {
@@ -97,9 +98,110 @@ function decodeImage(value:unknown) {
  if(typeof value!=='string'||value.length>60*1024*1024||!/^[A-Za-z0-9+/\r\n]*={0,2}$/.test(value))throw new ProviderError('服务商未返回有效图片数据，请核对服务商记录。',true);
  const buffer=Buffer.from(value,'base64');if(!buffer.length)throw new ProviderError('服务商返回了空图片，请核对服务商记录。',true);return buffer;
 }
+
+/** IDs remain strings: RunningHub resource/task IDs exceed JavaScript integer precision. */
+function runningHubId(value:unknown,label:string) {
+ if(typeof value!=='string'||!/^\d{1,40}$/.test(value))throw new ProviderError(`${label}需要填写十进制数字字符串。`);
+ return value;
+}
+export function validateRunningHubSettings(value:unknown):RunningHubSettings {
+ if(!value||typeof value!=='object'||Array.isArray(value))throw new ProviderError('请填写 RunningHub 应用或工作流配置。');
+ const r=value as RunningHubSettings;
+ if(!['app','workflow'].includes(r.kind))throw new ProviderError('RunningHub 类型应为应用或工作流。');
+ const resourceId=runningHubId(r.resourceId,'RunningHub 应用/工作流 ID');
+ const used=new Set<string>();
+ const node=(value:unknown,extra=false):RunningHubNode=>{
+  if(!value||typeof value!=='object'||Array.isArray(value))throw new ProviderError('RunningHub 节点映射格式无效。');
+  const n=value as RunningHubNode,nodeId=runningHubId(n.nodeId,'节点 ID');
+  if(typeof n.fieldName!=='string'||!/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$/.test(n.fieldName))throw new ProviderError('节点字段名需要 1–100 位字母、数字、点、下划线或短横线。');
+  const pair=`${nodeId}:${n.fieldName}`;if(used.has(pair))throw new ProviderError('节点 ID 与字段名组合不能重复。');used.add(pair);
+  if(extra&&(typeof n.fieldValue!=='string'||n.fieldValue.length>12000))throw new ProviderError('额外节点值需要填写文字，最多 12000 字。');
+  return {nodeId,fieldName:n.fieldName,...(extra?{fieldValue:n.fieldValue}:{})};
+ };
+ const promptNode=node(r.promptNode),referenceNode=r.referenceNode===undefined?undefined:node(r.referenceNode);
+ if(!Array.isArray(r.extraNodes)||r.extraNodes.length>32)throw new ProviderError('额外节点最多 32 个。');
+ const extraNodes=r.extraNodes.map(n=>node(n,true));
+ if(!Number.isInteger(r.outputIndex)||r.outputIndex<0||r.outputIndex>15)throw new ProviderError('输出索引范围为 0–15。');
+ return {kind:r.kind,resourceId,promptNode,...(referenceNode?{referenceNode}:{}),extraNodes,outputIndex:r.outputIndex};
+}
+interface RunningHubDependencies {
+ pollIntervalMs?:number; timeoutMs?:number;
+ download?:(url:string,signal:AbortSignal)=>Promise<Buffer>;
+}
+// Only known input/auth/resource rejections are definite. A new/unknown code,
+// internal error, or already-running/queued response may follow acceptance.
+const runningHubSubmissionRejections=new Set(['301','332','380','416','433','801','802','803','806','809','810','811','812','901','1001','1002','1007','1008','1009','1014','1101','1501','1505']);
+async function waitForPoll(milliseconds:number,signal:AbortSignal) {
+ signal.throwIfAborted();
+ await new Promise<void>((resolve,reject)=>{
+  const abort=()=>{clearTimeout(timer);reject(signal.reason);};
+  const timer=setTimeout(()=>{signal.removeEventListener('abort',abort);resolve();},milliseconds);
+  signal.addEventListener('abort',abort,{once:true});
+ });
+}
+
+/** Native app/workflow adapter. Recovery never enters the upload/submission branch. */
+async function generateRunningHub(input:GenerationInput,dependencies:RunningHubDependencies={}) {
+ const {settings,reference,prompt,signal}=input;
+ const config=validateRunningHubSettings(settings.runninghub);
+ if(!input.remoteTaskId&&reference&&!config.referenceNode)throw new ProviderError('生成角色母版或表情需要配置参考图节点，不能退化为纯文字生成。');
+ let taskId=input.remoteTaskId?runningHubId(input.remoteTaskId,'远程任务 ID'):undefined;
+ const controller=AbortSignal.any([signal,AbortSignal.timeout(dependencies.timeoutMs??30*60_000)]);
+ let phase:'upload'|'submit'|'query'=taskId?'query':'upload';
+ const request=async(path:string,body:BodyInit,multipart=false):Promise<any>=>{
+  controller.throwIfAborted();
+  const response=await fetch(settings.baseUrl+path,{method:'POST',headers:{Authorization:`Bearer ${settings.apiKey}`,...(multipart?{}:{'Content-Type':'application/json'})},body,signal:controller,redirect:'error'});
+  if(!response.ok){await response.body?.cancel();throw new ProviderError(`RunningHub 返回 HTTP ${response.status}。${phase==='upload'?'参考图上传未完成，未提交生成任务。':phase==='query'?'已保留远程任务 ID，可恢复查询。':'请先核对平台任务记录。'}`,phase==='query'||(phase==='submit'&&(response.status>=500||[408,409].includes(response.status))));}
+  let payload:any;try{payload=JSON.parse((await boundedBody(response,4*1024*1024)).toString());}catch{throw new ProviderError('RunningHub 响应无法解析，请核对平台任务记录。',phase!=='upload');}
+  if(payload===null||typeof payload!=='object'||Array.isArray(payload))throw new ProviderError('RunningHub 响应格式无效。',phase!=='upload');
+  if(payload.code!==undefined&&![0,200,'0','200'].includes(payload.code)){
+   const uncertain=phase==='query'||(phase==='submit'&&!runningHubSubmissionRejections.has(String(payload.code)));
+   throw new ProviderError(uncertain?'RunningHub 请求结果不明，请先核对平台任务记录；已有任务 ID 可恢复查询，勿直接重复提交。':'RunningHub 拒绝此请求，请检查权限、资源与节点配置。',uncertain);
+  }
+  return payload.data??payload;
+ };
+ try{
+  if(!taskId){
+   const nodes:RunningHubNode[]=[{...config.promptNode,fieldValue:prompt}];
+   if(reference){
+    const form=new FormData();form.set('file',new Blob([new Uint8Array(reference)],{type:'image/png'}),'reference.png');
+    const uploaded=await request('/openapi/v2/media/upload/binary',form,true);
+    const fileName=uploaded.fileName??uploaded.filename;
+    if(typeof fileName!=='string'||!fileName||fileName.length>2000)throw new ProviderError('RunningHub 上传未返回文件名，未提交生成任务。');
+    nodes.push({...config.referenceNode!,fieldValue:fileName});
+   }
+   nodes.push(...config.extraNodes);
+   phase='submit';
+   const submitted=await request(config.kind==='app'?'/task/openapi/ai-app/run':'/task/openapi/create',JSON.stringify({apiKey:settings.apiKey,[config.kind==='app'?'webappId':'workflowId']:config.resourceId,nodeInfoList:nodes}));
+   try{taskId=runningHubId(submitted.taskId,'远程任务 ID');}catch{throw new ProviderError('RunningHub 未返回有效任务 ID，提交结果不明；请先核对平台记录。',true);}
+   // Persist before any poll so a process interruption cannot cause a second submission.
+   await input.onRemoteTaskId?.(taskId);
+  }
+  phase='query';
+  while(true){
+   const result=await request('/openapi/v2/query',JSON.stringify({taskId}));
+   if(result.taskId!==undefined&&result.taskId!==taskId)throw new ProviderError('RunningHub 查询返回的任务 ID 不匹配，已保留原任务 ID；请核对平台记录后恢复查询。',true);
+   if(result.status==='SUCCESS'){
+    const output=result.results?.[config.outputIndex];
+    if(!output||typeof output.url!=='string')throw new ProviderError('RunningHub 已完成，但所选输出没有图片地址；请检查输出索引后在平台取回图片。',true);
+    if(output.outputType&&!/^(png|jpe?g|webp|avif|gif|image(?:\/[\w.+-]+)?)$/i.test(output.outputType))throw new ProviderError('RunningHub 所选输出不是图片，请检查工作流和输出索引。',true);
+    return await (dependencies.download??downloadResult)(output.url,controller);
+   }
+   if(['FAILED','CANCELLED','CANCELED'].includes(result.status))throw new ProviderError('RunningHub 报告任务失败或已取消。请查看平台详情；已保留任务 ID。');
+   if(!['QUEUED','RUNNING','PENDING'].includes(result.status))throw new ProviderError('RunningHub 返回未知任务状态，已保留任务 ID，可恢复查询。',true);
+   await waitForPoll(dependencies.pollIntervalMs??2500,controller);
+  }
+ }catch(error){
+  if(error instanceof ProviderError)throw error;
+  throw new ProviderError(signal.aborted?'已停止本地等待；RunningHub 远程任务可能仍在运行或计费。':taskId?'查询或图片下载中断，已保留远程任务 ID，可恢复查询。':phase==='upload'?'参考图上传中断，未提交生成任务。':'提交响应中断，结果不明；请核对 RunningHub 任务记录，勿直接重复提交。',phase!=='upload');
+ }
+}
 /** Single upstream submission. Intentionally no retries or text-only fallback. */
 export class CloudImageProvider implements ImageProvider {
- async generate({settings,prompt,reference,signal}:GenerationInput) {
+ constructor(private readonly dependencies:{runningHub?:RunningHubDependencies}={}){}
+ async generate(input:GenerationInput) {
+  if(input.settings.provider==='runninghub')return generateRunningHub(input,this.dependencies.runningHub);
+  const {settings,prompt,reference,signal}=input;
   const controller=AbortSignal.any([signal,AbortSignal.timeout(240_000)]);
   let endpoint:string;let body:BodyInit;const headers:Record<string,string>={};
   if(settings.provider==='openai') {

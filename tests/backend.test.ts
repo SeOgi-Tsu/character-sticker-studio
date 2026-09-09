@@ -149,3 +149,16 @@ test('production paths are rooted in the app package and SPA routes do not shado
  const f=await fixture({frontendDir:web});
  try{assert.match((await f.call('/')).data.toString(),/Production fixture/);assert.match((await f.call('/studio/nested')).data.toString(),/Production fixture/);assert.equal((await f.call('/api/nonexistent')).response.status,404);}finally{await f.dispose();await rm(web,{recursive:true,force:true});}
 });
+
+test('composition overrides and imported custom recipes persist; unknown compositions are rejected',async()=>{
+ const f=await fixture({autoStart:false});
+ try{
+  const boot=(await f.call('/api/bootstrap')).data,p=boot.projects[0],id=boot.catalog.reactions[0].id;
+  const saved=await f.call(`/api/projects/${p.id}`,'PUT',{overrides:{[id]:{compositionId:'fullbody'}}});
+  assert.equal(saved.data.overrides[id].compositionId,'fullbody');
+  const recipe=(await f.call(`/api/projects/${p.id}/recipe`)).data;
+  assert.equal((await f.call('/api/projects/import','POST',recipe)).data.overrides[id].compositionId,'fullbody');
+  assert.equal((await f.call(`/api/projects/${p.id}`,'PUT',{overrides:{[id]:{compositionId:'invented'}}})).response.status,400);
+  assert.equal((await f.call('/api/projects/import','POST',{version:1,project:{customReactions:[{id:'mine',compositionId:'invented'}]}})).response.status,400);
+ }finally{await f.dispose();}
+});

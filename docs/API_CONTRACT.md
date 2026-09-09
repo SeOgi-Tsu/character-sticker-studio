@@ -1,5 +1,7 @@
 # Shared contract (frontend/backend/content)
 
+V0.2 adds per-reaction `compositionId`, `catalog.compositions`, RunningHub provider settings and `POST /api/jobs/:id/resume`. See [V2_CONTRACT.md](V2_CONTRACT.md) for the exact additions. Known RunningHub remote tasks resume querying on restart; other ambiguous submissions remain unknown. All original endpoints remain compatible.
+
 Shared TS types: `src/shared/types.ts`. Content exports `catalog` from `src/shared/catalog.ts` and `buildStickerPrompt(character, reaction, style)`, `buildAnchorPrompt(character, style)`, `buildCharacterPrompt(character)`, `buildNijiPrompt(character, options?)` from `src/shared/prompts.ts`. Niji options: `{layout?: 'single'|'turnaround'|'detail', stylize?: number, raw?: boolean, styleReference?: string}`. All return string.
 
 All API results JSON unless PNG/ZIP; errors `{error:string}` with non-2xx status.

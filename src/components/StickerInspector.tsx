@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { ArrowDownToLine, ChevronDown, ChevronUp, Eye, Heart, RotateCcw, Sparkles, Type, WandSparkles } from 'lucide-react';
-import type { Caption, Job, Reaction } from '../shared/types';
+import type { Caption, Composition, Job, Reaction } from '../shared/types';
+import { canResumeJob } from '../lib/jobs';
 import { Field, Status } from './Common';
 
 export function defaultCaption(reaction: Reaction): Caption { return { text: reaction.caption, enabled: true, color: '#ffffff', stroke: '#382537', position: 'bottom', fontSize: 52 }; }
 
-export default function StickerInspector({ reaction, caption, job, onReaction, onCaption, onGenerate, onRetry, onDownload, onPreview, busy, dirty, revision }: {
-  reaction?: Reaction; caption?: Caption; job?: Job;
+export default function StickerInspector({ reaction, compositions, caption, job, onReaction, onCaption, onGenerate, onRetry, onResume, onDownload, onPreview, busy, dirty, revision }: {
+  reaction?: Reaction; compositions: Composition[]; caption?: Caption; job?: Job;
   onReaction: (value: Partial<Reaction>) => void; onCaption: (value: Caption) => void;
-  onGenerate: () => void; onRetry: (job: Job) => void; onDownload: (job: Job) => void;
+  onGenerate: () => void; onRetry: (job: Job) => void; onResume: (job: Job) => void; onDownload: (job: Job) => void;
   onPreview: (job: Job) => void; busy: boolean; dirty: boolean; revision: string;
 }) {
   const [dark, setDark] = useState(false);
@@ -22,13 +23,16 @@ export default function StickerInspector({ reaction, caption, job, onReaction, o
     {job && <div className="inspector-job-state"><Status status={job.status} />{job.asset && <span>{job.asset.hasAlpha ? '含 Alpha' : '实色背景'}</span>}</div>}
     {dirty && job?.asset && <p className="field-hint preview-save-hint">文字为编辑预览，保存后更新实际排字。</p>}
     <Field label="表情名称"><input value={reaction.name} maxLength={80} onChange={e => onReaction({ name: e.target.value })} /></Field>
+    <Field label="构图与表演" hint={compositions.find(item => item.id === (reaction.compositionId || 'halfbody'))?.description || '旧配方默认半身，可自由切换。'}><select value={reaction.compositionId || 'halfbody'} onChange={e => onReaction({ compositionId: e.target.value as Reaction['compositionId'] })}>{compositions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+    {job?.asset && <p className="field-hint composition-edit-hint">构图与动作修改在下次生成时生效，已有成品保留。</p>}
     <Field label="动作与情绪" hint="一个清楚的主动作，小图也能一眼看懂。"><textarea rows={4} value={reaction.action} onChange={e => onReaction({ action: e.target.value })} /></Field>
     <div className="caption-heading"><span><Type size={15} />表情文字</span><label className="toggle"><input type="checkbox" aria-label="启用表情文字" checked={text.enabled} onChange={e => onCaption({ ...text, enabled: e.target.checked })} /><span /></label></div>
     <input className="caption-input" aria-label="表情文案" value={text.text} maxLength={48} placeholder="也可以不加字" onChange={e => onCaption({ ...text, text: e.target.value })} disabled={!text.enabled} />
     {text.enabled && <div className="caption-settings"><div className="form-row"><Field label="字色"><input type="color" aria-label="文字颜色" value={text.color} onChange={e => onCaption({ ...text, color: e.target.value })} /></Field><Field label="描边"><input type="color" aria-label="描边颜色" value={text.stroke} onChange={e => onCaption({ ...text, stroke: e.target.value })} /></Field><Field label="位置"><select aria-label="文字位置" value={text.position} onChange={e => onCaption({ ...text, position: e.target.value as Caption['position'] })}><option value="bottom">底部</option><option value="top">顶部</option></select></Field></div><Field label={`字号 · ${text.fontSize}px`}><input type="range" min={20} max={96} value={text.fontSize} onChange={e => onCaption({ ...text, fontSize: Number(e.target.value) })} /></Field></div>}
     <button className="button secondary full inspector-generate" disabled={busy} onClick={onGenerate}><WandSparkles size={16} />{job?.asset ? '按当前方案再画一张' : '先生成这一张'}</button>
     {job?.asset && <div className="split-actions"><button className="button small quiet" onClick={() => onPreview(job)}><Eye size={14} />大图</button><button className="button small quiet" onClick={() => onDownload(job)}><ArrowDownToLine size={14} />PNG</button></div>}
-    {job && ['failed', 'unknown', 'cancelled'].includes(job.status) && <button className="button small quiet full" disabled={busy} onClick={() => onRetry(job)}><RotateCcw size={14} />使用原任务配方重试</button>}
+    {job && canResumeJob(job) ? <button className="button small quiet full" disabled={busy} onClick={() => onResume(job)}><RotateCcw size={14} />继续查询原任务</button> : job && ['failed', 'unknown', 'cancelled'].includes(job.status) && <button className="button small quiet full" disabled={busy} onClick={() => onRetry(job)}><RotateCcw size={14} />使用原任务配方重试</button>}
+    {job?.remoteTaskId && <p className="remote-task-id">RunningHub 任务 <code>{job.remoteTaskId}</code>{canResumeJob(job) && <span>继续查询不会重新提交绘图。</span>}</p>}
     {job?.error && <p className="job-error">{job.error}</p>}
     {job && <div className="prompt-disclosure"><button onClick={() => setShowPrompt(!showPrompt)}>查看实际生成提示词 {showPrompt ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</button>{showPrompt && <pre>{job.prompt}</pre>}</div>}
   </aside>;

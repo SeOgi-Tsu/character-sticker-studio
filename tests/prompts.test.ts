@@ -57,6 +57,59 @@ test('every reaction can change while the chosen style stays identical', () => {
   }
 });
 
+test('mixed starter pack changes framing and silhouette while retaining all existing reactions', () => {
+  const pack = catalog.packs.find(item => item.id === 'mixed12');
+  assert.ok(pack, 'a varied starter pack must be selectable');
+  assert.equal(catalog.packs[0].id, 'mixed12');
+  assert.equal(pack.reactionIds.length, 12);
+  const chosen = pack.reactionIds.map(id => catalog.reactions.find(item => item.id === id)!);
+  assert.ok(new Set(chosen.map(item => item.compositionId)).size >= 6);
+  assert.ok(chosen.filter(item => item.compositionId === 'closeup').length <= 3);
+  assert.equal(catalog.reactions.length, 48, 'old project reaction IDs stay usable');
+  const compositionIds = new Set(catalog.compositions.map(item => item.id));
+  for (const reaction of catalog.reactions) assert.ok(compositionIds.has(reaction.compositionId!), reaction.id);
+});
+
+test('whole-body and prone reactions require complete bodies instead of the portrait default', () => {
+  for (const id of ['running', 'rolling', 'wriggle', 'low-battery', 'victory']) {
+    const reaction = catalog.reactions.find(item => item.id === id)!;
+    const prompt = buildStickerPrompt(character, reaction, catalog.styles[0]);
+    assert.match(prompt, /entire body|whole body|full-body/i, id);
+    assert.match(prompt, /not a portrait|no portrait/i, id);
+    assert.doesNotMatch(prompt, /requested close-up may crop the torso|head-to-body ratio.*unchanged/i, id);
+  }
+  const prone = buildStickerPrompt(character, catalog.reactions.find(item => item.id === 'wriggle')!, catalog.styles[0]);
+  assert.match(prone, /belly-down/i);
+  assert.doesNotMatch(prone, /stand upright|standing pose/i);
+});
+
+test('selected staging overrides reference framing and supports deliberate per-reaction choice', () => {
+  const reaction = { ...catalog.reactions.find(item => item.id === 'hug')!, compositionId: 'fullbody' as const };
+  const prompt = buildStickerPrompt(character, reaction, catalog.styles[0]);
+  assert.match(prompt, /do not copy.*pose.*camera.*crop.*scale/i);
+  assert.ok(prompt.includes(catalog.compositions.find(item => item.id === 'fullbody')!.prompt));
+  assert.ok(!prompt.includes(catalog.compositions.find(item => item.id === 'halfbody')!.prompt));
+  assert.doesNotMatch(prompt, /props stay small|subordinate to the face|requested close-up may crop/i);
+  assert.ok(prompt.includes(catalog.styles[0].prompt));
+  const legacy = { ...catalog.reactions.find(item => item.id === 'running')! };
+  delete legacy.compositionId;
+  assert.ok(buildStickerPrompt(character, legacy, catalog.styles[0]).includes(catalog.compositions.find(item => item.id === 'action')!.prompt));
+  const custom = { ...legacy, id: 'custom-reaction', action: 'Hold both arms open in a friendly invitation.' };
+  assert.ok(buildStickerPrompt(character, custom, catalog.styles[0]).includes(catalog.compositions.find(item => item.id === 'halfbody')!.prompt));
+});
+
+test('switching a face reaction to full body removes the close camera request', () => {
+  for (const id of ['waao', 'watching-you']) {
+    const reaction = { ...catalog.reactions.find(item => item.id === id)!, compositionId: 'fullbody' as const };
+    const prompt = buildStickerPrompt(character, reaction, catalog.styles[0]);
+    assert.match(prompt, /Full-body wide framing/i);
+    assert.doesNotMatch(prompt, /Face close to the viewer|oversized face toward the viewer/i);
+  }
+  for (const reaction of catalog.reactions) {
+    assert.doesNotMatch(reaction.action, /camera|framing|canvas|close-up|three-quarter view|overhead angle|viewed slightly from above|whole compact body|entire upper body visible/i, reaction.id);
+  }
+});
+
 test('anchor establishes one reusable neutral character, character sheet includes useful views', () => {
   const anchor = buildAnchorPrompt(character, catalog.styles[0]);
   assert.match(anchor, /exactly one character/i);

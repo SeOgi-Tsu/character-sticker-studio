@@ -1,4 +1,5 @@
 import type { Character, Reaction, Style } from './types.ts';
+import { getComposition } from './catalog.ts';
 
 export interface NijiPromptOptions {
   layout?: 'single' | 'turnaround' | 'detail';
@@ -21,8 +22,8 @@ function characterDescription(character: Character): string {
   ].filter(([, value]) => cleanProse(value)).map(([label, value]) => `${label}: ${cleanProse(value)}.`).join('\n');
 }
 
-const identityRule = 'Use the supplied character reference as the identity source. If an approved chibi anchor is supplied, keep its face construction, head-to-body ratio, line weight and simplified costume unchanged. Preserve hair silhouette, hair color, eye color, distinctive accessories and outfit color blocks. Express the requested emotion without substituting a different character. Keep all existing accessories attached naturally; do not add another character’s costume or facial features.';
-const stickerComposition = 'Composition: exactly one character, one reaction, one image. A single isolated sticker subject with a clear compact silhouette, square canvas, generous safe margin around hair and hands, legible at 96 pixels. Keep the full intended silhouette inside the canvas; the requested close-up may crop the torso, but not hair ornaments or the expressive hands. No grid, no collage, no multi-panel sheet, no duplicate poses, no extra characters. Prefer genuine transparent background where supported; otherwise use a plain uniform white background, never a drawn checkerboard. No text, no letters, no numbers, no speech bubbles, no captions, no logo and no watermark. Caption typography is added separately after generation.';
+const identityRule = 'Use the supplied character reference for identity: preserve the recognizable hair design, hair color, eye color, distinctive accessories and outfit color blocks. Use an approved chibi anchor to preserve the chosen drawing finish and those identity cues only. Do not copy the reference pose, camera angle, crop or subject scale. Rebuild the silhouette and staging for this reaction, keeping the selected drawing style coherent; expressive squash, stretch and foreshortening are welcome where the action needs them. Keep accessories attached naturally and do not substitute a different character.';
+const stickerComposition = 'Output: exactly one character, one reaction, one image. A single isolated sticker unit on a square canvas, legible at 96 pixels, with safe margin around the whole chosen staging. Follow the selected framing; all intentionally visible hair ornaments, hands, feet and props must stay inside the canvas. No grid, no collage, no multi-panel sheet, no duplicate poses, no extra characters. Prefer genuine transparent background where supported; otherwise use a plain uniform white background, never a drawn checkerboard. No text, no letters, no numbers, no speech bubbles, no captions, no logo and no watermark. Caption typography is added separately after generation.';
 
 export function buildStickerPrompt(character: Character, reaction: Reaction, style: Style): string {
   return [
@@ -30,8 +31,9 @@ export function buildStickerPrompt(character: Character, reaction: Reaction, sty
     characterDescription(character),
     identityRule,
     `Use only this selected visual style for the entire set: ${cleanProse(style.prompt)}`,
+    `Selected staging — this determines camera distance, crop and subject scale even if the reference uses different framing: ${getComposition(reaction).prompt}`,
     `Draw this one concrete action and expression: ${cleanProse(reaction.action)}`,
-    'Capture the clearest single instant of the reaction. A dynamic action is one frozen pose, not a sequence. Hands have simple natural anatomy; props stay small and never cover the eyes. Decorative hearts, tears or motion marks are sparse and subordinate to the face.',
+    'Capture the clearest single instant of the reaction. A dynamic action is one frozen pose, not a sequence. Body posture, silhouette and object interaction must carry the emotion as well as the face. If wording in the action suggests a different crop, keep its emotion and adapt the gesture to the selected staging. Hands have simple natural anatomy; required props remain readable without covering the eyes. Use only a few purposeful hearts, tears or motion marks.',
     stickerComposition,
   ].join('\n\n');
 }
@@ -42,7 +44,7 @@ export function buildAnchorPrompt(character: Character, style: Style): string {
     characterDescription(character),
     identityRule,
     `Use only this selected visual style: ${cleanProse(style.prompt)}`,
-    'Draw exactly one character in a neutral front-facing full-body standing pose, arms relaxed slightly away from the torso, a small warm closed-mouth smile and attentive open eyes. Show the hair, key accessories, simplified outfit and footwear clearly. Establish proportions that remain stable in every later sticker. One image, one pose, no character sheet, no expressions row, no extra subjects.',
+    'Draw exactly one character in a neutral front-facing full-body standing pose, arms relaxed slightly away from the torso, a small warm closed-mouth smile and attentive open eyes. Show the hair, key accessories, simplified outfit and footwear clearly. This anchor establishes recognizable design and drawing finish; later stickers deliberately change pose, camera distance, framing and subject scale. One image, one pose, no character sheet, no expressions row, no extra subjects.',
     'Square canvas, centered compact silhouette with generous margins, clean flat lighting. Prefer genuine transparent background where supported; otherwise a plain white background, never a drawn checkerboard. No text, no captions, no lettering, no logo, no watermark.',
   ].join('\n\n');
 }

@@ -9,7 +9,7 @@ import { buildAnchorPrompt, buildCharacterPrompt, buildStickerPrompt } from '../
 import type { Asset, Caption, Character, Job, Project, ProviderSettings, Reaction } from '../src/shared/types.ts';
 import { Store } from './store.ts';
 import { Images, exportName } from './images.ts';
-import { CloudImageProvider, normalizeBaseUrl, ProviderError, type ImageProvider } from './provider.ts';
+import { CloudImageProvider, normalizeBaseUrl, ProviderError, validateRunningHubSettings, type ImageProvider } from './provider.ts';
 
 class HttpError extends Error {constructor(readonly status:number,message:string){super(message);}}
 const fail=(message:string,status=400):never=>{throw new HttpError(status,message);};
@@ -73,7 +73,7 @@ export function createApp(options:AppOptions={}) {
   if(!stripAssets)for(const field of ['referenceAssetId','anchorAssetId'] as const){if(c[field]){const id=idText(c[field]);if(!store.get<Asset>('assets',id))fail('找不到角色参考图，请重新上传。');result[field]=id;}}
   return result;
  }
- function validateReaction(value:unknown,partial=false):Reaction|Partial<Reaction>{const r=object(value);const result:Record<string,unknown>={};for(const field of ['name','caption','category','action','emoji'])if(!partial||r[field]!==undefined)result[field]=text(r[field],'',field==='action'?3000:100);if(!partial){result.id=idText(r.id);result.tags=r.tags?stringArray(r.tags,20):[];}return result;}
+ function validateReaction(value:unknown,partial=false):Reaction|Partial<Reaction>{const r=object(value);const result:Record<string,unknown>={};for(const field of ['name','caption','category','action','emoji'])if(!partial||r[field]!==undefined)result[field]=text(r[field],'',field==='action'?3000:100);if(r.compositionId!==undefined){if(!catalog.compositions.some(c=>c.id===r.compositionId))fail('构图不存在，请选择已有构图。');result.compositionId=r.compositionId;}if(!partial){result.id=idText(r.id);result.tags=r.tags?stringArray(r.tags,20):[];}return result;}
  function validateProject(input:unknown,prior?:Project,stripAssets=false):Project{
   const p=object(input);const base=prior||newProject();
   const styleId=text(p.styleId,base.styleId,100);if(!catalog.styles.some(s=>s.id===styleId))fail('风格不存在。');
@@ -86,15 +86,22 @@ export function createApp(options:AppOptions={}) {
  }
  function newProject():Project{const date=now();return {id:randomUUID(),name:'Margaret 的表情工坊',character:{name:'Margaret',description:'可爱、亲近、有一点小傲娇的虚拟角色',identity:'浅金色双马尾，红色眼睛，黑色蝴蝶结，金色心形饰件',outfit:'保留参考图中的服装剪影、配色和饰件',personality:'软萌、活泼，情绪表达鲜明'},styleId:catalog.styles[0].id,selectedIds:catalog.packs[0]?.reactionIds||catalog.reactions.slice(0,24).map(r=>r.id),customReactions:[],overrides:{},captions:{},createdAt:date,updatedAt:date};}
  if(store.all('projects').length===0){const initial=newProject();store.put('projects',initial.id,initial);}
- for(const record of store.all<StoredJob>('jobs'))if(record.job.status==='running'){record.job.status='unknown';record.job.error='应用在生成过程中停止。提交结果不明，请先核对服务商记录，再决定是否重试。';record.job.updatedAt=now();store.put('jobs',record.job.id,record);}
+ for(const record of store.all<StoredJob>('jobs'))if(record.job.status==='running'||(record.job.status==='unknown'&&record.job.provider==='runninghub'&&record.job.remoteTaskId)){
+  const recoverable=record.job.provider==='runninghub'&&Boolean(record.job.remoteTaskId);
+  record.job.status=recoverable?'queued':'unknown';record.job.error=recoverable?'应用重启，将仅恢复远程任务查询。':'应用在生成过程中停止。提交结果不明，请先核对服务商记录，再决定是否重试。';record.job.updatedAt=now();store.put('jobs',record.job.id,record);
+ }
  let started=options.autoStart!==false,closing=false;const active=new Map<string,AbortController>();const operations=new Set<Promise<void>>();
  function updateJob(record:StoredJob,patch:Partial<Job>){record.job={...record.job,...patch,updatedAt:now()};store.put('jobs',record.job.id,record);return record.job;}
  async function run(record:StoredJob,controller:AbortController){
   try{
    if(!record.settings?.apiKey)throw new ProviderError('队列中的接口配置不完整，请重新配置后手动重试。');
-   const reference=record.referenceId?await images.load(record.referenceId):undefined;
+   const reference=record.referenceId&&!record.job.remoteTaskId?await images.load(record.referenceId):undefined;
    if(controller.signal.aborted)return;
-   const result=await provider.generate({settings:record.settings,prompt:record.job.prompt,reference,signal:controller.signal});
+   const result=await provider.generate({settings:record.settings,prompt:record.job.prompt,reference,signal:controller.signal,remoteTaskId:record.job.remoteTaskId,onRemoteTaskId:id=>{
+    // Cancellation and persistence may race with the submit response: keep the latest status.
+    record.job=getStoredJob(record.job.id).job;
+    updateJob(record,{remoteTaskId:id});
+   }});
    if(controller.signal.aborted)return;
    const asset=await images.save(result,`${record.job.name}.png`,`${record.job.provider} / ${record.job.model}`);
    if(controller.signal.aborted)return;
@@ -105,6 +112,7 @@ export function createApp(options:AppOptions={}) {
  }
  function pump(){if(!started||closing)return;const concurrency=settings().concurrency;for(const record of store.all<StoredJob>('jobs')){if(active.size>=concurrency)break;if(record.job.status!=='queued')continue;const controller=new AbortController();active.set(record.job.id,controller);updateJob(record,{status:'running',error:undefined});const operation=run(record,controller);operations.add(operation);void operation.finally(()=>operations.delete(operation));}}
  function readyConfig(){const config=settings();if(!config.apiKey||!config.model||!config.baseUrl)fail('请先在接口设置中保存 API 地址、密钥和图片模型。');return structuredClone(config);}
+ function requireReferenceMapping(config:ProviderSettings,referenceId?:string){if(config.provider==='runninghub'&&referenceId&&!config.runninghub?.referenceNode)fail('RunningHub 生成角色母版或表情需要先配置参考图节点。');}
  function deduplicate(key:string,signature:string):Job[]|undefined{const prior=store.get<Dedup>('requests',key);if(!prior)return;if(prior.signature!==signature)fail('此请求编号已用于另一项操作，请刷新后重新提交。',409);return prior.ids.map(id=>getStoredJob(id).job);}
  function saveBatch(key:string,signature:string,records:StoredJob[]){store.transaction(()=>{for(const record of records)store.put('jobs',record.job.id,record);store.put('requests',key,{signature,ids:records.map(r=>r.job.id)});});setImmediate(pump);return records.map(r=>r.job);}
  function portable(project:Project){const {referenceAssetId,anchorAssetId,...character}=project.character;const {id,createdAt,updatedAt,...rest}=project;return {version:1,project:{...rest,character},references:[referenceAssetId&&{role:'reference',filename:store.get<Asset>('assets',referenceAssetId)?.filename},anchorAssetId&&{role:'anchor',filename:store.get<Asset>('assets',anchorAssetId)?.filename}].filter(Boolean)};}
@@ -115,13 +123,18 @@ export function createApp(options:AppOptions={}) {
  app.get('/api/bootstrap',(_req,res)=>res.json({projects:store.all('projects'),catalog,settings:safeSettings(settings()),assets:store.all('assets'),jobs:getJobs()}));
  app.get('/api/settings',(_req,res)=>res.json(safeSettings(settings())));
  app.put('/api/settings',(req,res)=>{
-  const body=object(req.body),old=settings();const providerName=body.provider??old.provider;if(!['openai','gemini'].includes(providerName))fail('仅支持 OpenAI 兼容接口或 Gemini 原生接口。');
+  const body=object(req.body),old=settings();const providerName=body.provider??old.provider;if(!['openai','gemini','runninghub'].includes(providerName))fail('仅支持 OpenAI 兼容、Gemini 原生或 RunningHub 接口。');
   let baseUrl='';try{baseUrl=normalizeBaseUrl(text(body.baseUrl,old.baseUrl,2000));}catch(error){fail((error as Error).message);}
-  const model=text(body.model,old.model,150).trim();if(!model||/[\r\n]/.test(model))fail('请输入有效的图片模型名称。');
-  const size=text(body.size,old.size,20);if(!(providerName==='gemini'?['1K','2K','4K','1024x1024','1536x1024','1024x1536','auto']:['256x256','512x512','1024x1024','1536x1024','1024x1536','1792x1024','1024x1792','auto']).includes(size))fail('不支持此图片尺寸。');
+  let runninghub:ProviderSettings['runninghub'];
+  if(providerName==='runninghub'){
+   if(new URL(baseUrl).pathname!=='/')fail('RunningHub 地址仅填写站点，例如 https://www.runninghub.ai，不附加接口路径。');
+   try{runninghub=validateRunningHubSettings(body.runninghub??old.runninghub);}catch(error){fail((error as Error).message);}
+  }
+  const model=runninghub?`${runninghub.kind}:${runninghub.resourceId}`:text(body.model,old.model,150).trim();if(!model||/[\r\n]/.test(model))fail('请输入有效的图片模型名称。');
+  const size=text(body.size,old.size,20);if(providerName!=='runninghub'&&!(providerName==='gemini'?['1K','2K','4K','1024x1024','1536x1024','1024x1536','auto']:['256x256','512x512','1024x1024','1536x1024','1024x1536','1792x1024','1024x1792','auto']).includes(size))fail('不支持此图片尺寸。');
   const concurrency=Number(body.concurrency??old.concurrency);if(!Number.isInteger(concurrency)||concurrency<1||concurrency>4)fail('并发数范围为 1–4。');
   const changed=providerName!==old.provider||baseUrl!==old.baseUrl;const supplied=text(body.apiKey,'',4096).trim();if(/[\r\n]/.test(supplied))fail('API 密钥不能换行。');
-  const config:ProviderSettings={provider:providerName,baseUrl:baseUrl!,model,size,concurrency,apiKey:body.clearApiKey?'':supplied||(!changed?old.apiKey:'')};store.put('settings','provider',config);res.json(safeSettings(config));setImmediate(pump);
+  const config:ProviderSettings={provider:providerName,baseUrl:baseUrl!,model,size,concurrency,...(runninghub?{runninghub}:{}),apiKey:body.clearApiKey?'':supplied||(!changed?old.apiKey:'')};store.put('settings','provider',config);res.json(safeSettings(config));setImmediate(pump);
  });
  app.post('/api/projects',(req,res)=>{const project=validateProject(req.body||{});store.put('projects',project.id,project);res.status(201).json(project);});
  app.post('/api/projects/import',(req,res)=>{const body=object(req.body);if(body.version!==1)fail('不支持此配方版本。');const project=validateProject(body.project,undefined,true);store.put('projects',project.id,project);res.status(201).json(project);});
@@ -139,6 +152,7 @@ export function createApp(options:AppOptions={}) {
   const referenceId=kind==='sticker'?project.character.anchorAssetId||project.character.referenceAssetId:project.character.referenceAssetId;
   if(kind!=='character'&&!referenceId)fail('请先上传角色参考图，或导入并选定角色立绘。');
   if(referenceId&&!store.get<Asset>('assets',referenceId))fail('参考图不存在，请重新上传。');
+  requireReferenceMapping(config,referenceId);
   if(kind==='sticker'&&!reactionIds.length)fail('请先选择至少一个表情。');
   const records:StoredJob[]=(kind==='sticker'?reactionIds:[undefined]).map(reactionId=>{
    const reaction=reactionId?getReaction(project,reactionId):undefined;
@@ -147,8 +161,15 @@ export function createApp(options:AppOptions={}) {
   });res.status(201).json({jobs:saveBatch(key,signature,records)});
  });
  app.post('/api/jobs/import',(req,res)=>{const body=object(req.body);const project=getProject(idText(body.projectId)),asset=store.get<Asset>('assets',idText(body.assetId));if(!asset)fail('导入图片不存在。');const kind=body.kind;if(!['sticker','anchor','character'].includes(kind))fail('导入类型无效。');const reactionId=kind==='sticker'?idText(body.reactionId):undefined;const reaction=reactionId?getReaction(project,reactionId):undefined;const date=now();const job:Job={id:randomUUID(),projectId:project.id,kind,reactionId,name:text(body.name,reaction?.name||'外部导入',100),prompt:text(body.provenance,'外部导入图片',4000),status:'succeeded',asset,createdAt:date,updatedAt:date,model:'imported',provider:'imported'};store.put('jobs',job.id,{job,captionText:reaction?.caption});res.status(201).json(job);});
- app.post('/api/jobs/:id/cancel',(req,res)=>{const record=getStoredJob(String(req.params.id));if(record.job.status==='queued')updateJob(record,{status:'cancelled',error:'已取消，未提交给图片服务。'});else if(record.job.status==='running'){active.get(record.job.id)?.abort();updateJob(record,{status:'unknown',error:'已停止本地等待；服务商可能仍在生成或计费，请先核对记录。'});}res.json(record.job);});
- app.post('/api/jobs/:id/retry',(req,res)=>{const old=getStoredJob(String(req.params.id)),key=requestId(req.body?.requestId),signature=JSON.stringify({retry:old.job.id});const prior=deduplicate(key,signature);if(prior)return res.json(prior[0]);if(['queued','running'].includes(old.job.status))fail('此任务仍在队列中。',409);if(old.job.provider==='imported')fail('外部导入图片不能通过接口重试。');const config=readyConfig();const date=now();const record:StoredJob={...old,settings:config,job:{...old.job,id:randomUUID(),status:'queued',asset:undefined,error:undefined,provider:config.provider,model:config.model,createdAt:date,updatedAt:date}};res.status(201).json(saveBatch(key,signature,[record])[0]);});
+ app.post('/api/jobs/:id/cancel',(req,res)=>{const record=getStoredJob(String(req.params.id));if(record.job.status==='queued')updateJob(record,record.job.remoteTaskId?{status:'unknown',error:'已停止本地查询；远程任务可能仍在生成或计费。'}:{status:'cancelled',error:'已取消，未提交给图片服务。'});else if(record.job.status==='running'){active.get(record.job.id)?.abort();updateJob(record,{status:'unknown',error:'已停止本地等待；服务商可能仍在生成或计费，请先核对记录。'});}res.json(record.job);});
+ app.post('/api/jobs/:id/resume',(req,res)=>{
+  const record=getStoredJob(String(req.params.id));
+  if(record.job.provider!=='runninghub'||!record.job.remoteTaskId)fail('只有已记录 RunningHub 任务 ID 的任务可以恢复查询。',409);
+  if(!['unknown','failed'].includes(record.job.status)||active.has(record.job.id))fail('任务正在处理或已完成，无需恢复查询。',409);
+  if(!record.settings?.apiKey)fail('此任务保存的接口凭据不完整，无法恢复查询。');
+  res.json(updateJob(record,{status:'queued',error:undefined}));setImmediate(pump);
+ });
+ app.post('/api/jobs/:id/retry',(req,res)=>{const old=getStoredJob(String(req.params.id)),key=requestId(req.body?.requestId),signature=JSON.stringify({retry:old.job.id});const prior=deduplicate(key,signature);if(prior)return res.json(prior[0]);if(['queued','running'].includes(old.job.status))fail('此任务仍在队列中。',409);if(old.job.provider==='imported')fail('外部导入图片不能通过接口重试。');if(old.job.provider==='runninghub'&&old.job.remoteTaskId&&old.job.status!=='succeeded')fail('已记录 RunningHub 任务 ID，请使用恢复查询；确需重新生成时，从表情选项新建任务。',409);const config=readyConfig();requireReferenceMapping(config,old.referenceId);const date=now();const record:StoredJob={...old,settings:config,job:{...old.job,id:randomUUID(),status:'queued',asset:undefined,error:undefined,remoteTaskId:undefined,provider:config.provider,model:config.model,createdAt:date,updatedAt:date}};res.status(201).json(saveBatch(key,signature,[record])[0]);});
  app.get('/api/jobs/:id/render',async(req,res)=>{const {job}=getStoredJob(String(req.params.id));if(job.status!=='succeeded'||!job.asset)fail('任务尚无可下载的图片。',409);const buffer=await images.render(job.asset!,renderSize(req.query.size),req.query.caption==='0'?undefined:captionFor(job));res.type('png').setHeader('Content-Disposition',`inline; filename="${job.id}.png"`);res.send(buffer);});
  app.get('/api/projects/:id/export',async(req,res)=>{
   const project=getProject(String(req.params.id)),size=renderSize(req.query.size);const latest=new Map<string,Job>();for(const job of getJobs())if(job.projectId===project.id&&job.kind==='sticker'&&job.status==='succeeded'&&job.asset&&job.reactionId)latest.set(job.reactionId,job);
