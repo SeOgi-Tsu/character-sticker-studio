@@ -14,7 +14,7 @@ for (const directory of ['src', 'server', 'docs', 'scripts', 'tests', '.github']
   const resolved = path.join(root, directory);
   if (fs.existsSync(resolved)) zip.directory(resolved, directory);
 }
-for (const file of ['package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts', 'index.html', 'README.md', 'LICENSE', '.gitignore', '.env.example', '.dockerignore', 'Dockerfile', 'compose.yaml']) {
+for (const file of ['package.json', 'package-lock.json', 'tsconfig.json', 'vite.config.ts', 'index.html', 'README.md', 'LICENSE', '.gitignore', '.gitattributes', '.env.example', '.dockerignore', 'Dockerfile', 'compose.yaml']) {
   if (fs.existsSync(path.join(root, file))) zip.file(path.join(root, file), { name: file });
 }
 await zip.finalize();
