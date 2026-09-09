@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowRight, BookOpen, Check, ChevronDown, CircleHelp, Coffee, Download, FileJson, Flower2, Heart, History, ImagePlus, Layers3, LoaderCircle, Menu, Plus, Search, Settings2, ShieldCheck, SlidersHorizontal, Smile, Sparkles, Upload, WandSparkles, X } from 'lucide-react';
-import type { Asset, Bootstrap, Caption, Catalog, Character, Composition, Interaction, Job, Project, ProviderSettings, Reaction } from './shared/types';
+import type { Asset, Bootstrap, Caption, Catalog, Composition, Interaction, Job, Project, ProviderSettings, Reaction } from './shared/types';
 import { api, ApiError, download, errorMessage, post, readImage } from './lib/api';
 import { canResumeJob } from './lib/jobs';
 import { Field, Modal, Status } from './components/Common';
@@ -10,6 +10,9 @@ import Settings from './components/Settings';
 import StickerInspector from './components/StickerInspector';
 import { captionStyles, defaultCaptionFor } from './shared/typography';
 import ResultsView, { ImagePreview } from './components/ResultsView';
+import StartGuide from './components/StartGuide';
+import { hasSeenGuide, markGuideSeen, newCharacterFromGuide, readActiveProjectId, rememberActiveProjectId, type StartGuideInput, type StartMode } from './lib/onboarding';
+import { applyProjectChange } from './lib/character-workflow';
 
 type Page = 'character' | 'anchor' | 'stickers' | 'history' | 'export' | 'niji';
 const navigation = [
@@ -20,7 +23,6 @@ const navigation = [
   { id: 'export' as Page, label: '打包带走', en: 'EXPORT & SHARE', icon: Download, number: '05' },
 ];
 
-function emptyCharacter(name = ''): Character { return { name, description: '', identity: '', outfit: '', personality: '', memePersona: '', signatureMotifs: '', outfitMode: 'reference' }; }
 function withAssets(existing: Asset[], incoming: Asset[]) { return Array.from(new Map([...existing, ...incoming].map(asset => [asset.id, asset])).values()); }
 function withJobs(existing: Job[], incoming: Job[]) { return Array.from(new Map([...existing, ...incoming].map(job => [job.id, job])).values()); }
 
@@ -62,9 +64,10 @@ export default function App() {
   const [previewOrder, setPreviewOrder] = useState<string[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
-  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(() => !hasSeenGuide());
+  const [guideError, setGuideError] = useState('');
+  const [entryMode, setEntryMode] = useState<StartMode | undefined>();
   const [customOpen, setCustomOpen] = useState(false);
-  const [newName, setNewName] = useState('');
   const [custom, setCustom] = useState({ name: '', caption: '', action: '' });
   const [preview, setPreview] = useState<Job | null>(null);
   const [retryWarning, setRetryWarning] = useState<Job | null>(null);
@@ -90,9 +93,11 @@ export default function App() {
     setLoading(true); setLoadError('');
     try {
       const data = await api<Bootstrap>('/api/bootstrap');
-      const first = data.projects[0];
+      const rememberedId = readActiveProjectId();
+      const first = data.projects.find(item => item.id === rememberedId) || data.projects[0];
       if (!first) throw new Error('工作室没有可用项目，请检查服务端初始化。');
       setProjects(data.projects); setProject(first); projectRef.current = first;
+      setPage(!first.character.referenceAssetId ? 'character' : !first.character.anchorAssetId ? 'anchor' : 'stickers');
       setPreviewOrder([...first.selectedIds]);
       revision.current = 0; savedRevision.current = 0; setDirty(false);
       setCatalog({ ...data.catalog, compositions: data.catalog.compositions || [], interactions: data.catalog.interactions || [], captionStyles: data.catalog.captionStyles?.length ? data.catalog.captionStyles : captionStyles, personas: data.catalog.personas || [] }); setSettings(data.settings); setAssets(withAssets(data.assets, data.jobs.flatMap(j => j.asset ? [j.asset] : []))); setJobs(data.jobs);
@@ -122,7 +127,7 @@ export default function App() {
     const current = projectRef.current;
     if (!current) return;
     const changingStyle = value.styleId !== undefined && value.styleId !== current.styleId;
-    const next = { ...current, ...value, ...(changingStyle ? { character: { ...(value.character ?? current.character), anchorAssetId: undefined } } : {}) };
+    const next = applyProjectChange(current, value);
     projectRef.current = next; revision.current += 1; setProject(next); setDirty(true);
     if (changingStyle) notify('风格已切换，可重新生成或选择匹配的 Q 版母版。');
   }
@@ -151,12 +156,42 @@ export default function App() {
     try { await action(); } catch (e) { handleError(e); } finally { busyRef.current = false; setBusy(false); }
   }
   function navigate(next: Page) { setPage(next); setSidebarOpen(false); }
+  function closeGuide() { markGuideSeen(); setGuideOpen(false); setGuideError(''); }
+  function adoptProject(next: Project) {
+    projectRef.current = next; setProject(next); revision.current = 0; savedRevision.current = 0; setDirty(false);
+    setPreviewOrder([...next.selectedIds]); setActiveId(next.selectedIds[0] || ''); setActivePack(''); setCategory('全部'); setSearch('');
+    rememberActiveProjectId(next.id); setEntryMode(undefined);
+  }
+  async function startFromGuide(input: StartGuideInput): Promise<boolean> {
+    let completed = false;
+    setGuideError('');
+    await run(async () => {
+      try {
+        await saveAll();
+        const character = newCharacterFromGuide(input);
+        const next = await post<Project>('/api/projects', { name: `${character.name} 的表情工坊`, character });
+        setProjects(current => [next, ...current]); adoptProject(next); setEntryMode(input.mode); navigate('character');
+        notify(input.mode === 'existing' ? '新工作室已创建，上传你的角色参考图就能开始。' : '新工作室已创建，补充外观与性格，再生成喜欢的角色。');
+        completed = true;
+      } catch (error) { setGuideError(errorMessage(error)); throw error; }
+    });
+    return completed;
+  }
+  async function nextCharacterStep(anchorMode: boolean) {
+    await run(async () => {
+      const current = await saveAll();
+      const selected = anchorMode ? current.character.anchorAssetId : current.character.referenceAssetId;
+      if (!selected) { notify(anchorMode ? '先选定一张 Q 版母版。' : '先上传或选定一张角色参考图。', 'error'); return; }
+      navigate(anchorMode ? 'stickers' : 'anchor');
+    });
+  }
   async function switchProject(id: string) {
     await run(async () => {
       await saveAll();
       const next = projects.find(item => item.id === id);
       if (!next) return;
       projectRef.current = next; setProject(next); revision.current = 0; savedRevision.current = 0; setDirty(false);
+      rememberActiveProjectId(next.id); setEntryMode(undefined);
       setPreviewOrder([...next.selectedIds]);
       const completedIds = new Set(jobs.filter(job => job.projectId === next.id && job.kind === 'sticker' && job.status === 'succeeded' && job.asset).map(job => job.reactionId));
       setActiveId(next.selectedIds.find(reactionId => completedIds.has(reactionId)) || next.selectedIds[0] || catalog.reactions[0]?.id || ''); setActivePack(''); setCategory('全部');
@@ -219,8 +254,7 @@ export default function App() {
   async function openPreview(job: Job) { await run(async () => { await saveAll(); setPreview(job); }); }
   async function exportRecipe() { await run(async () => { const current = await saveAll(); await download(`/api/projects/${current.id}/recipe`, `${current.character.name || 'character'}-recipe.json`); notify('配方已导出；参考图请单独保存。'); }); }
   async function exportZip(captions: boolean, size: number) { await run(async () => { const current = await saveAll(); await download(`/api/projects/${current.id}/export?captions=${captions ? 1 : 0}&size=${size}`, `${current.character.name || 'character'}-stickers.zip`); }); }
-  async function importRecipe(file: File) { await run(async () => { await saveAll(); if (file.size > 2 * 1024 * 1024) throw new Error('配方文件需小于 2 MB'); let recipe: unknown; try { recipe = JSON.parse(await file.text()); } catch { throw new Error('请选择有效的 JSON 配方文件'); } const next = await post<Project>('/api/projects/import', recipe); setProjects(current => [next, ...current]); projectRef.current = next; setProject(next); revision.current = 0; savedRevision.current = 0; setDirty(false); setPreviewOrder([...next.selectedIds]); setActiveId(next.selectedIds[0] || ''); setActivePack(''); setCategory('全部'); setSearch(''); navigate('character'); notify('配方已导入，请重新添加角色参考图。'); }); }
-  async function createProject(e: React.FormEvent) { e.preventDefault(); await run(async () => { await saveAll(); const next = await post<Project>('/api/projects', { name: `${newName} 的表情工坊`, character: emptyCharacter(newName) }); setProjects(current => [next, ...current]); projectRef.current = next; setProject(next); revision.current = 0; savedRevision.current = 0; setDirty(false); setPreviewOrder([...next.selectedIds]); setActiveId(next.selectedIds[0] || ''); setActivePack(''); setCategory('全部'); setSearch(''); setNewProjectOpen(false); setNewName(''); navigate('character'); notify('新角色的工作室准备好了。'); }); }
+  async function importRecipe(file: File) { await run(async () => { await saveAll(); if (file.size > 2 * 1024 * 1024) throw new Error('配方文件需小于 2 MB'); let recipe: unknown; try { recipe = JSON.parse(await file.text()); } catch { throw new Error('请选择有效的 JSON 配方文件'); } const next = await post<Project>('/api/projects/import', recipe); setProjects(current => [next, ...current]); adoptProject(next); navigate('character'); notify('配方已导入，请重新添加角色参考图。'); }); }
   function addCustom(e: React.FormEvent) { e.preventDefault(); if (!projectRef.current) return; const item: Reaction = { id: `custom-${crypto.randomUUID()}`, name: custom.name, caption: custom.caption, action: custom.action, category: '我的自定义', emoji: '', tags: ['自定义'] }; changeProject({ customReactions: [...projectRef.current.customReactions, item], selectedIds: [...projectRef.current.selectedIds, item.id] }); setActiveId(item.id); setCategory('全部'); setSearch(''); setCustomOpen(false); setCustom({ name: '', caption: '', action: '' }); }
 
   if (authRequired) return <Login onSuccess={() => void load()} />;
@@ -259,11 +293,11 @@ export default function App() {
   return <div className={`app-shell ${sidebarOpen ? 'sidebar-open' : ''}`}>
     {sidebarOpen && <button className="sidebar-scrim" aria-label="关闭导航" onClick={() => setSidebarOpen(false)} />}
     <aside className="sidebar"><a className="brand" href="#" onClick={e => { e.preventDefault(); navigate('stickers'); }}><span className="brand-mark"><Flower2 size={27} strokeWidth={1.8} /></span><span><strong>绒绒工坊</strong><small>CHARACTER STICKER STUDIO</small></span></a>
-      <div className="project-switcher"><label><span className="eyebrow">YOUR WORKSPACE</span><select value={project.id} aria-label="选择角色项目" disabled={busy || uploading || saving} onChange={e => void switchProject(e.target.value)}>{projects.map(item => <option key={item.id} value={item.id}>{item.character.name || item.name}</option>)}</select></label><button className="icon-button" aria-label="新建角色项目" onClick={() => setNewProjectOpen(true)}><Plus size={18} /></button></div>
+      <div className="project-switcher"><label><span className="eyebrow">YOUR WORKSPACE</span><select value={project.id} aria-label="选择角色项目" disabled={busy || uploading || saving} onChange={e => void switchProject(e.target.value)}>{projects.map(item => <option key={item.id} value={item.id}>{item.character.name || item.name}</option>)}</select></label><button className="icon-button" aria-label="新建角色项目" disabled={busy || uploading} onClick={() => { setGuideError(''); setGuideOpen(true); }}><Plus size={18} /></button></div>
       <div className="sidebar-character"><span className="character-stamp">{anchorAsset ? 'CHIBI ANCHOR' : 'YOUR MUSE'}</span>{heroAsset ? <img className={anchorAsset ? 'is-anchor' : ''} src={heroAsset.url} alt={`${project.character.name} 的${anchorAsset ? 'Q 版母版' : '角色参考图'}`} /> : <button className="no-character" onClick={() => navigate('character')}><ImagePlus size={37} strokeWidth={1.2} /><span>让你的角色<br />住进这里</span></button>}<div className="character-nameplate"><strong>{project.character.name || '未命名角色'}</strong><span>{heroAsset ? <><span className="live-dot" />{anchorAsset ? '母版已选定' : '参考图已就绪'}</> : '等待第一张角色图'}</span></div><span className="photo-corner top" /><span className="photo-corner bottom" /></div>
       <nav className="main-navigation" aria-label="工作室步骤">{navigation.map(item => <button key={item.id} className={page === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><span className="nav-number">{item.number}</span><item.icon size={18} /><span>{item.label}</span>{item.id === 'history' && activeCount > 0 ? <span className="nav-count">{activeCount}</span> : page === item.id ? <span className="nav-active-dot" /> : null}</button>)}</nav>
       <button className={`niji-nav ${page === 'niji' ? 'active' : ''}`} onClick={() => navigate('niji')}><span className="niji-emblem">n</span><span><strong>Niji 7 角色工坊</strong><small>从灵感到三视图</small></span><ArrowRight size={15} /></button>
-      <div className="sidebar-bottom"><button onClick={() => setSettingsOpen(true)}><Settings2 size={17} /><span>模型与连接</span><span className={`connection-dot ${settings.hasApiKey ? 'connected' : ''}`} /></button><div className="sidebar-note"><Heart size={12} /> MADE FOR YOUR LITTLE EMOTIONS</div></div>
+      <div className="sidebar-bottom"><button onClick={() => { setGuideError(''); setSidebarOpen(false); setGuideOpen(true); }}><BookOpen size={17} /><span>使用指南</span></button><button onClick={() => setSettingsOpen(true)}><Settings2 size={17} /><span>模型与连接</span><span className={`connection-dot ${settings.hasApiKey ? 'connected' : ''}`} /></button><div className="sidebar-note"><Heart size={12} /> MADE FOR YOUR LITTLE EMOTIONS</div></div>
     </aside>
     <div className="workspace"><header className="topbar"><div className="breadcrumbs"><button className="icon-button mobile-menu" aria-label="打开导航" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button><span>{project.character.name || '新角色'} 的工作室</span><span className="breadcrumb-slash">/</span><strong>{page === 'niji' ? 'Niji 7 角色工坊' : navigation.find(item => item.id === page)?.label}</strong></div><div className="topbar-actions"><span className={`save-state ${dirty ? 'dirty' : ''}`}>{saving ? <LoaderCircle size={12} className="spin" /> : dirty ? <span /> : <Check size={12} />}{saving ? '保存中' : dirty ? '有未保存修改' : '已保存到本机'}</span><button className="button small quiet save-button" disabled={!dirty || saving || busy} onClick={() => void run(async () => { await saveAll(); notify('修改已保存'); })}>保存</button><button className="icon-button" aria-label="导入项目配方" title="导入项目配方" onClick={() => importRef.current?.click()}><Upload size={17} /></button><button className="icon-button" aria-label="导出项目配方" title="导出项目配方" onClick={() => void exportRecipe()}><FileJson size={17} /></button><span className="version-label">LOCAL STUDIO <span>01</span></span></div></header>
       <input type="file" accept="application/json,.json" hidden ref={importRef} onChange={e => { if (e.target.files?.[0]) void importRecipe(e.target.files[0]); e.target.value = ''; }} />
@@ -281,7 +315,7 @@ export default function App() {
         <div className="collection-footnote"><span>小图要清楚，情绪要直接，可爱要像你。</span><button className="text-button" onClick={() => setSourcesOpen(true)}>策划参考 <ArrowRight size={12} /></button></div>
       </main><StickerInspector reaction={active} compositions={catalog.compositions} interactions={catalog.interactions} captionStyles={catalog.captionStyles} caption={active ? project.captions[active.id] ?? defaultCaptionFor(active) : undefined} job={active ? latestFor(active.id) : undefined} onReaction={editReaction} onCaption={editCaption} onGenerate={() => active && void generate('sticker', [active.id])} onRetry={job => void retry(job)} onResume={job => void resume(job)} onDownload={job => void downloadJob(job)} onPreview={job => void openPreview(job)} busy={busy || uploading} dirty={dirty} revision={project.updatedAt} />
       <footer className="batch-bar"><div className="batch-selection"><div className="selection-count">{String(project.selectedIds.length).padStart(2, '0')}</div><div><strong>张表情已选中</strong><span>{currentStyle?.name || '选择画风'} <span>·</span> {activeCount ? `${activeCount} 张正在生成` : readyCount ? `本项目共 ${readyCount} 张已完成` : '每张独立生成'}</span></div></div><div className="batch-actions">{!settings.hasApiKey && <button className="connection-hint" onClick={() => setSettingsOpen(true)}><span className="connection-dot" />连接图片 API</button>}<button className="button secondary" disabled={busy || !project.selectedIds.length || uploading} onClick={() => void generate('sticker', [project.selectedIds[0]])}>先做 1 张样张</button><button className="button primary" disabled={busy || !project.selectedIds.length || uploading} onClick={() => void generate('sticker')}>{busy ? <LoaderCircle size={16} className="spin" /> : <WandSparkles size={17} />}生成选中的 {project.selectedIds.length} 张<ArrowRight size={16} /></button></div></footer></div> : <main className="page-content">
-        {(page === 'character' || page === 'anchor') && <CharacterView key={page} project={project} assets={assets} jobs={jobs} catalog={catalog} onChange={changeProject} onUpload={(file, target) => void upload(file, target)} onGenerate={kind => void generate(kind)} onNiji={() => navigate('niji')} busy={busy} uploading={uploading} anchorMode={page === 'anchor'} />}
+        {(page === 'character' || page === 'anchor') && <CharacterView key={page} project={project} assets={assets} jobs={jobs} catalog={catalog} onChange={changeProject} onUpload={(file, target) => void upload(file, target)} onGenerate={kind => void generate(kind)} onNiji={() => navigate('niji')} busy={busy} uploading={uploading} anchorMode={page === 'anchor'} entryMode={entryMode} onNext={() => void nextCharacterStep(page === 'anchor')} onHistory={() => navigate('history')} onPreview={job => void openPreview(job)} />}
         {page === 'niji' && <NijiWorkshop key={project.id} project={project} onUpload={(file, target) => void upload(file, target)} uploading={uploading} onError={message => notify(message, 'error')} />}
         {(page === 'history' || page === 'export') && <ResultsView project={project} jobs={jobs} onPreview={job => void openPreview(job)} onDownload={job => void downloadJob(job)} onRetry={job => void retry(job)} onResume={job => void resume(job)} onCancel={job => void cancel(job)} onExport={(captions, size) => void exportZip(captions, size)} onRecipe={() => void exportRecipe()} busy={busy} exportMode={page === 'export'} />}
       </main>}
@@ -290,7 +324,7 @@ export default function App() {
     {settingsOpen && <Settings settings={settings} onSaved={value => { setSettings(value); notify('模型连接已保存'); }} onClose={() => setSettingsOpen(false)} />}
     {preview && <ImagePreview job={preview} project={project} onClose={() => setPreview(null)} onDownload={job => void downloadJob(job)} />}
     {sourcesOpen && <Modal title="可爱，也要有使用场景。" subtitle="这是可编辑的选款策划，不是未经验证的全网热度排行榜。" onClose={() => setSourcesOpen(false)} wide><div className="sources-intro"><span className="edition-large">2026</span><p>每张先想「希望对方看完有什么反应」：想接住、想摸摸，或被一本正经的反差逗笑。用扑向镜头、递来小礼物、轻轻挤脸等互动，再搭配不同镜头与表演张力。既保留日常接话，也让夸张和安静交替；你可以自由改动每张的方案。</p></div><div className="source-list">{catalog.sources.map(source => <a href={source.url} target="_blank" rel="noreferrer" key={source.id}><BookOpen size={18} /><div><strong>{source.title}</strong><p>{source.evidence}</p><small>查阅：{source.checkedAt}</small></div><ArrowRight size={17} /></a>)}</div><p className="honesty-note">参考创作者的表达方式与官方贴图场景，不内置或复制他人的表情图片。传播效果仍取决于角色、社区和实际使用。</p></Modal>}
-    {newProjectOpen && <Modal title="欢迎一个新朋友" subtitle="从一句话开始，也可以稍后上传角色图。" onClose={() => setNewProjectOpen(false)}><form className="simple-form" onSubmit={createProject}><Field label="角色名字"><input required maxLength={80} autoFocus value={newName} onChange={e => setNewName(e.target.value)} placeholder="例如：Lumi" /></Field><button className="button primary full" disabled={busy || !newName.trim()}><Plus size={17} />创建角色工作室</button></form></Modal>}
+    {guideOpen && <StartGuide currentProjectName={project.character.name || project.name} busy={busy || uploading || saving} error={guideError} onStart={startFromGuide} onClose={closeGuide} />}
     {customOpen && <Modal title="这份心情，你来定义。" subtitle="用一个明确的动作，让角色替你说话。" onClose={() => setCustomOpen(false)}><form className="simple-form" onSubmit={addCustom}><Field label="表情名称"><input required maxLength={80} autoFocus value={custom.name} onChange={e => setCustom({ ...custom, name: e.target.value })} placeholder="例如：偷偷观察" /></Field><Field label="文案（可留空）"><input maxLength={60} value={custom.caption} onChange={e => setCustom({ ...custom, caption: e.target.value })} placeholder="让我康康" /></Field><Field label="动作与情绪"><textarea required rows={4} value={custom.action} onChange={e => setCustom({ ...custom, action: e.target.value })} placeholder="从画面侧边探出半张脸，睁大眼睛，好奇地偷偷观察。" /></Field><button className="button primary full"><Plus size={17} />加入我的表情</button></form></Modal>}
     {retryWarning && <Modal title="重新生成这张？" subtitle="上一次提交状态不确定，服务商可能已完成或扣费。" onClose={() => setRetryWarning(null)}><div className="simple-form"><p>请先在服务商控制台核对「{retryWarning.name}」的记录。继续会提交一笔新的绘图请求，原任务会保留。</p><div className="split-actions"><button className="button secondary" onClick={() => setRetryWarning(null)}>暂不重试</button><button className="button primary" onClick={() => void retry(retryWarning, true)}>已核对，重新生成</button></div></div></Modal>}
   </div>;

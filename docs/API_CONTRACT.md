@@ -1,4 +1,4 @@
-# Shared contract (frontend/backend/content) · v0.6.0
+# Shared contract (frontend/backend/content) · v0.7.0
 
 V0.2 adds per-reaction `compositionId`, `catalog.compositions`, RunningHub provider settings and `POST /api/jobs/:id/resume`. See [V2_CONTRACT.md](V2_CONTRACT.md) for the exact additions. Known RunningHub remote tasks resume querying on restart; other ambiguous submissions remain unknown. All original endpoints remain compatible.
 
@@ -10,7 +10,28 @@ V0.5.0 adds three per-image text modes, six caption styles, three bundled OFL Ch
 
 V0.6.0 adds optional per-character signature motifs and per-reaction single-image mini-scenes, six new reactions (70 total), and pack `mini-theater12` (角色小剧场 12). Original 64 reaction IDs, their packs, reference-outfit rules and Niji generation/import flow remain available. Default selections are not automatically enlarged. See [V6_MINI_SCENE_CONTRACT.md](V6_MINI_SCENE_CONTRACT.md).
 
+V0.7.0 adds first-use routing, clean project creation through the existing API, current-project restoration and clearer character/anchor candidate navigation. It adds no backend endpoints or provider changes. See [V7_ONBOARDING_CONTRACT.md](V7_ONBOARDING_CONTRACT.md).
+
 Shared TS types: `src/shared/types.ts`. Content exports `catalog` from `src/shared/catalog.ts` and `buildStickerPrompt(character, reaction, style, caption?)`, `buildAnchorPrompt(character, style)`, `buildCharacterPrompt(character)`, `buildNijiPrompt(character, options?)` from `src/shared/prompts.ts`. Niji options: `{layout?: 'single'|'turnaround'|'detail', stylize?: number, raw?: boolean, styleReference?: string}`. All return string. Omitting the optional sticker caption preserves a text-free generation prompt; the jobs API resolves the project's caption or reaction recommendation before calling this function.
+
+## V0.7.0 frontend onboarding and candidate workflow
+
+`src/lib/onboarding.ts` exports `StartMode = 'existing' | 'scratch'` and `StartGuideInput = {mode, name, description}`. The guide collects a trimmed name of 1–80 UTF-16 code units and an optional description up to 2000. `newCharacterFromGuide(input)` creates a fresh character with only that name/description, empty identity/outfit/personality/memePersona/signatureMotifs, reference outfit mode and no asset IDs. The parent saves current edits and calls existing POST `/api/projects`; it never clones the current character or queues image generation through the guide.
+
+Route `existing` opens reference-upload instructions; `scratch` opens description and cloud/Niji choices. Back retains inputs. Skip or continue-current only dismisses the guide; they do not create a project. `StartGuide.onStart` returns `Promise<boolean>`: failed creation retains the form, displays the parent's optional `error` inside the modal and does not mark the guide seen. A successful start or an explicit dismissal marks it seen. A sidebar 使用指南 action can reopen it.
+
+Browser preferences use two origin-scoped `localStorage` keys:
+
+| Key | Value and behavior |
+| --- | --- |
+| `character-sticker-studio:guide:v1` | `"1"` after dismissal or successful start. Missing/unreadable means show the first-use guide. |
+| `character-sticker-studio:active-project:v1` | Last selected/created project ID. On bootstrap, use it only if it is present in returned projects; otherwise use the first returned project. |
+
+Storage access, including reading `window.localStorage`, is guarded. Denied reads/writes do not block project creation, selection or dismissal; preferences may not survive reload, the guide may reappear and project selection falls back as above. Helpers `hasSeenGuide`, `markGuideSeen`, `readActiveProjectId`, `rememberActiveProjectId` accept optional storage mocks. These keys contain browser preferences, not API keys or project data.
+
+After bootstrap/reload, the selected project's asset IDs determine its entry page: no `referenceAssetId` → character; reference but no `anchorAssetId` → anchor; both → stickers. CharacterView receives optional `entryMode`, `onNext`, `onHistory`, `onPreview`; choosing the next step saves current edits and checks the required selected reference/anchor. Candidate lists are scoped to project/kind, sorted newest first, show statuses and retain prior successful images when new ones are generated. Active jobs of the same kind disable repeated submission in this view. Niji remains manual external generation followed by import.
+
+`src/lib/character-workflow.ts` exports `applyProjectChange(current, change)`. The UI applies it to edits/uploads/candidate selection: changing `styleId` or `character.referenceAssetId` clears selected `anchorAssetId`; an unchanged reference or unrelated edit preserves it. Clearing selection does not delete assets or jobs. This is a shared frontend workflow rule, not a new server mutation or endpoint; direct API clients should apply the same invalidation when implementing equivalent reference changes.
 
 ## V0.6.0 optional mini-scene fields
 
