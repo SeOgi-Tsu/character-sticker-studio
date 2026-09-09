@@ -117,7 +117,7 @@ test('invalid images, unsafe captions and empty exports are rejected before gene
  }finally{await f.dispose();}
 });
 
-test('new anchor uses original reference; sticker uses selected anchor',async()=>{
+test('new anchor uses original reference; sticker retains original clothing and selected anchor',async()=>{
  const f=await fixture({autoStart:false});
  try{
   const boot=(await f.call('/api/bootstrap')).data;const p=boot.projects[0];const reference=await upload(f),anchor=await upload(f);
@@ -125,7 +125,8 @@ test('new anchor uses original reference; sticker uses selected anchor',async()=
   await f.call('/api/settings','PUT',{apiKey:'fixture'});
   const a=(await f.call('/api/jobs','POST',{projectId:p.id,kind:'anchor',requestId:'new-anchor'})).data.jobs[0];
   const b=(await f.call('/api/jobs','POST',{projectId:p.id,kind:'sticker',reactionIds:[boot.catalog.reactions[0].id],requestId:'new-sticker'})).data.jobs[0];
-  assert.equal(f.store.get<any>('jobs',a.id).referenceId,reference.id);assert.equal(f.store.get<any>('jobs',b.id).referenceId,anchor.id);
+  assert.equal(f.store.get<any>('jobs',a.id).referenceId,reference.id);assert.equal(f.store.get<any>('jobs',a.id).secondaryReferenceId,undefined);
+  assert.equal(f.store.get<any>('jobs',b.id).referenceId,reference.id);assert.equal(f.store.get<any>('jobs',b.id).secondaryReferenceId,anchor.id);
  }finally{await f.dispose();}
 });
 

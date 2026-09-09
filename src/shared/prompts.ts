@@ -17,12 +17,21 @@ function characterDescription(character: Character): string {
     ['Character name', character.name],
     ['Character concept supplied by the user', character.description],
     ['Identity cues that must remain recognizable', character.identity],
-    ['Outfit and accessories', character.outfit],
+    [character.outfitMode === 'custom' ? 'User-selected custom outfit and accessories' : 'Outfit detail notes', character.outfit],
     ['Personality', character.personality],
   ].filter(([, value]) => cleanProse(value)).map(([label, value]) => `${label}: ${cleanProse(value)}.`).join('\n');
 }
 
-const identityRule = 'Use the supplied character reference for identity: preserve the recognizable hair design, hair color, eye color, distinctive accessories and outfit color blocks. Use an approved chibi anchor to preserve the chosen drawing finish and those identity cues only. Do not copy the reference pose, camera angle, crop or subject scale. Rebuild the silhouette and staging for this reaction, keeping the selected drawing style coherent. Let the selected intensity determine any squash, stretch or foreshortening. Keep accessories attached naturally and do not substitute a different character.';
+function outfitAuthority(character: Character): string {
+  const sourcePriority = character.outfitMode === 'custom'
+    ? 'The user explicitly chose a custom outfit. The user’s outfit text overrides the reference clothing and authorizes that requested redesign; preserve the character identity, hair and eyes. Retain details not changed by the requested outfit, and keep the new costume consistent across views and reactions.'
+    : character.referenceAssetId
+      ? 'The original character reference or three-view sheet is the outfit authority. It outranks an inconsistent chibi anchor or style reference for costume construction. If two reference images are supplied, the first is the original identity and outfit reference, and the second is a face and drawing-style anchor only; the original controls clothes. User outfit notes clarify visible details and do not override the original outfit; any conflicting generated anchor clothing must be corrected to the original sheet.'
+      : 'With no original character reference supplied, the user’s outfit text defines the requested costume. If outfit text leaves details unspecified, retain the supplied chibi anchor clothing where available; otherwise complete those details consistently with the character concept.';
+  return `${sourcePriority} Preserve the authoritative garment types, neckline contour and depth, open or closed layering, shoulder and sleeve design, hem shapes, legwear and accessories. Simplify the rendering for the selected style, not the costume design: do not redesign the clothing, add fabric, close an open garment, raise or lower a neckline, or otherwise change coverage unless the user explicitly requested that change in custom outfit mode. Keep garment construction and ordinary visible skin faithful without adding suggestive posing or emphasis. Style references control drawing finish, not wardrobe.`;
+}
+
+const identityRule = 'Use the supplied character reference for identity: preserve the recognizable hair design, hair color, eye color and distinctive identity accessories. Use an approved chibi anchor to preserve the chosen drawing finish and those identity cues only; clothing follows the outfit authority stated below. Do not copy the reference pose, camera angle, crop or subject scale. Rebuild the silhouette and staging for this reaction, keeping the selected drawing style coherent. Let the selected intensity determine any squash, stretch or foreshortening. Keep accessories attached naturally and do not substitute a different character.';
 const stickerComposition = 'Output: exactly one character, one reaction, one image. A single isolated sticker unit on a square canvas, legible at 96 pixels. Follow the selected framing and protect the eyes, mouth and action-defining contact. No grid, no collage, no multi-panel sheet, no duplicate poses or second complete character. An anonymous partial viewer hand is allowed only under the selected contact mode rules. Prefer genuine transparent background where supported; otherwise use a plain uniform white background, never a drawn checkerboard. No text, no letters, no numbers, no speech bubbles, no captions, no logo and no watermark. Caption typography is added separately after generation.';
 
 function stagingBoundary(reaction: Reaction): string {
@@ -44,6 +53,7 @@ export function buildStickerPrompt(character: Character, reaction: Reaction, sty
     'Create a cute, highly readable original character reaction sticker.',
     characterDescription(character),
     identityRule,
+    outfitAuthority(character),
     `Use only this selected visual style for the entire set: ${cleanProse(style.prompt)}`,
     `Selected staging — this determines camera distance, crop and subject scale even if the reference uses different framing: ${getComposition(reaction).prompt}`,
     `Selected interaction — the selected staging has priority over interaction, intensity and action wording: ${getInteraction(reaction).prompt}`,
@@ -61,6 +71,7 @@ export function buildAnchorPrompt(character: Character, style: Style): string {
     'Create one reusable chibi character anchor for a consistent reaction sticker set.',
     characterDescription(character),
     identityRule,
+    outfitAuthority(character),
     `Use only this selected visual style: ${cleanProse(style.prompt)}`,
     'Draw exactly one character in a neutral front-facing full-body standing pose, arms relaxed slightly away from the torso, a small warm closed-mouth smile and attentive open eyes. Show the hair, key accessories, simplified outfit and footwear clearly. This anchor establishes recognizable design and drawing finish; later stickers deliberately change pose, camera distance, framing and subject scale. One image, one pose, no character sheet, no expressions row, no extra subjects.',
     'Square canvas, centered compact silhouette with generous margins, clean flat lighting. Prefer genuine transparent background where supported; otherwise a plain white background, never a drawn checkerboard. No text, no captions, no lettering, no logo, no watermark.',
@@ -76,6 +87,7 @@ export function buildCharacterPrompt(character: Character): string {
     'Create an anime character design sheet from the following character concept.',
     characterDescription(character),
     'Where a character reference is supplied, preserve its identity; fill only unspecified design details consistently with the user’s concept.',
+    outfitAuthority(character),
     detailLayout,
     sheetRendering,
   ].join('\n\n');
@@ -112,7 +124,7 @@ export function buildNijiPrompt(character: Character, options: NijiPromptOptions
 
   // User prose remains in its supplied language. We do not claim translation
   // or insert hidden LLM calls. Neutralize MJ control syntax in all prose.
-  const prose = [layoutPrompt, characterDescription(character), sheetRendering]
+  const prose = [layoutPrompt, characterDescription(character), outfitAuthority(character), sheetRendering]
     .join(' ').replace(/--+/g, '—').replace(/::+/g, ':').replace(/[{}]/g, '').replace(/\s+/g, ' ').trim();
   const parameters = [`--niji 7`, `--ar ${layout === 'single' ? '2:3' : '16:9'}`, `--s ${stylize}`];
   if (options.raw) parameters.push('--raw');

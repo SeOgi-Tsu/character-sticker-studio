@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import sharp from 'sharp';
-import { CloudImageProvider, ProviderError } from '../server/provider.ts';
+import { CloudImageProvider, ProviderError, validateRunningHubSettings } from '../server/provider.ts';
 import { createApp } from '../server/app.ts';
 import type { ProviderSettings } from '../src/shared/types.ts';
 
@@ -38,11 +38,38 @@ for(const kind of ['app','workflow'] as const)test(`RunningHub ${kind} uploads r
 test('known task resumes query only; ambiguous submit and missing reference mapping do not retry',async()=>{
  const upstream=await remote(url=>url.endsWith('/query')?result:{httpStatus:500,error:'private-rh-key'});
  try{
-  await provider().generate({settings:config(upstream.url),prompt:'unused',reference:Buffer.from('not uploaded'),remoteTaskId:taskId,signal:new AbortController().signal});assert.deepEqual(upstream.calls.map(c=>c.url),['/openapi/v2/query']);
+  await provider().generate({settings:config(upstream.url),prompt:'unused',reference:Buffer.from('not uploaded'),secondaryReference:Buffer.from('also not uploaded'),remoteTaskId:taskId,signal:new AbortController().signal});assert.deepEqual(upstream.calls.map(c=>c.url),['/openapi/v2/query']);
   await assert.rejects(provider().generate({settings:config(upstream.url),prompt:'new',signal:new AbortController().signal}),e=>e instanceof ProviderError&&e.uncertain&&!e.message.includes('private-rh-key'));
   const missing=config(upstream.url);delete missing.runninghub!.referenceNode;
   await assert.rejects(provider().generate({settings:missing,prompt:'new',reference:Buffer.from('ref'),signal:new AbortController().signal}),/参考图节点/);
   assert.equal(upstream.calls.length,2);
+ }finally{await upstream.close();}
+});
+
+for(const hasStyleNode of [false,true])test(`RunningHub ${hasStyleNode?'dual':'single'} mapping keeps original image primary`,async()=>{
+ let uploads=0;const upstream=await remote(url=>url.endsWith('/binary')?{code:200,data:{fileName:`openapi/reference-${++uploads}.png`}}:url.endsWith('/query')?result:{code:0,data:{taskId}});
+ try{
+  const settings=config(upstream.url);if(hasStyleNode)settings.runninghub!.styleReferenceNode={nodeId:'13',fieldName:'image'};
+  await provider().generate({settings,prompt:'wardrobe',reference:Buffer.from('original-clothing'),secondaryReference:Buffer.from('style-anchor'),signal:new AbortController().signal});
+  const uploadCalls=upstream.calls.filter(c=>c.url.endsWith('/binary'));assert.equal(uploadCalls.length,hasStyleNode?2:1);assert.ok(uploadCalls[0].body.includes(Buffer.from('original-clothing')));if(hasStyleNode)assert.ok(uploadCalls[1].body.includes(Buffer.from('style-anchor')));
+  const submissions=upstream.calls.filter(c=>c.url==='/task/openapi/ai-app/run');assert.equal(submissions.length,1);const nodes=JSON.parse(submissions[0].body.toString()).nodeInfoList;
+  assert.equal(nodes.find((n:any)=>n.nodeId==='12').fieldValue,'openapi/reference-1.png');assert.equal(nodes.find((n:any)=>n.nodeId==='13')?.fieldValue,hasStyleNode?'openapi/reference-2.png':undefined);
+ }finally{await upstream.close();}
+});
+
+test('RunningHub optional style mapping validates and shares uniqueness with all nodes',()=>{
+ const settings=config('https://www.runninghub.ai').runninghub!;
+ const valid={...settings,styleReferenceNode:{nodeId:'13',fieldName:'image'}};
+ assert.deepEqual(validateRunningHubSettings(valid).styleReferenceNode,valid.styleReferenceNode);
+ for(const styleReferenceNode of [settings.promptNode,settings.referenceNode,settings.extraNodes[0],{nodeId:'bad',fieldName:'image'}])assert.throws(()=>validateRunningHubSettings({...settings,styleReferenceNode}));
+});
+
+test('RunningHub second reference upload rejection never submits a partial paid task',async()=>{
+ let uploads=0;const upstream=await remote(()=>++uploads===1?{code:200,data:{fileName:'original.png'}}:{httpStatus:500});
+ try{
+  const settings=config(upstream.url);settings.runninghub!.styleReferenceNode={nodeId:'13',fieldName:'image'};
+  await assert.rejects(provider().generate({settings,prompt:'two references',reference:Buffer.from('original'),secondaryReference:Buffer.from('style'),signal:new AbortController().signal}),e=>e instanceof ProviderError&&!e.uncertain);
+  assert.deepEqual(upstream.calls.map(c=>c.url),['/openapi/v2/media/upload/binary','/openapi/v2/media/upload/binary']);
  }finally{await upstream.close();}
 });
 
@@ -81,7 +108,8 @@ test('RunningHub app settings and job API reject invalid mappings, isolate secre
  const until=async(id:string)=>{for(let n=0;n<200;n++){const j=(await call(`/api/jobs/${id}`)).data;if(!['queued','running'].includes(j.status))return j;await new Promise(r=>setTimeout(r,10));}throw Error('timeout');};
  const stop=async()=>{server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));await runtime.close();};
  try{
-  const valid=config(upstream.url),saved=await call('/api/settings','PUT',valid);assert.equal(saved.status,200);assert.equal(saved.data.model,`app:${resourceId}`);assert.equal(saved.data.apiKey,undefined);
+  const valid=config(upstream.url);valid.runninghub!.styleReferenceNode={nodeId:'13',fieldName:'image'};
+  const saved=await call('/api/settings','PUT',valid);assert.equal(saved.status,200);assert.equal(saved.data.model,`app:${resourceId}`);assert.equal(saved.data.apiKey,undefined);assert.deepEqual(saved.data.runninghub.styleReferenceNode,valid.runninghub!.styleReferenceNode);
   for(const rh of [{...valid.runninghub,resourceId:2018709606033264641},{...valid.runninghub,outputIndex:16},{...valid.runninghub,extraNodes:[{nodeId:'6',fieldName:'text',fieldValue:'collision'}]},{...valid.runninghub,promptNode:{nodeId:'bad',fieldName:'text'}},{...valid.runninghub,extraNodes:[{nodeId:'1',fieldName:'x',fieldValue:{}}]}])assert.equal((await call('/api/settings','PUT',{...valid,runninghub:rh})).status,400);
   const p=(await call('/api/bootstrap')).data.projects[0];
   const noReference=config(upstream.url);delete noReference.runninghub!.referenceNode;
@@ -93,6 +121,8 @@ test('RunningHub app settings and job API reject invalid mappings, isolate secre
   await call(`/api/projects/${p.id}`,'PUT',{character:p.character});await call('/api/settings','PUT',valid);
   const created=(await call('/api/jobs','POST',{projectId:p.id,kind:'character',requestId:'rh-run'})).data.jobs[0];runtime.start();
   const unknown=await until(created.id);assert.equal(unknown.status,'unknown');assert.equal(unknown.remoteTaskId,taskId);assert.ok(!JSON.stringify((await call('/api/bootstrap')).data).includes('private-rh-key'));
+  // Query recovery does not depend on either local image still being present.
+  const missingImages=runtime.store.get<any>('jobs',created.id);missingImages.referenceId='missing-original';missingImages.secondaryReferenceId='missing-style';runtime.store.put('jobs',created.id,missingImages);
   const changed=(await call('/api/settings','PUT',{...saved.data,baseUrl:'https://example.test'})).data;assert.equal(changed.hasApiKey,false);
   assert.equal((await call(`/api/jobs/${created.id}/retry`,'POST',{requestId:'no-double-charge'})).status,409);
   queryFails=false;const resumed=await call(`/api/jobs/${created.id}/resume`,'POST',{});assert.equal(resumed.status,200);assert.equal(resumed.data.id,created.id);assert.equal((await until(created.id)).status,'succeeded');

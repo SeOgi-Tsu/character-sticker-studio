@@ -19,7 +19,7 @@ const navigation = [
   { id: 'export' as Page, label: '打包带走', en: 'EXPORT & SHARE', icon: Download, number: '05' },
 ];
 
-function emptyCharacter(name = ''): Character { return { name, description: '', identity: '', outfit: '', personality: '' }; }
+function emptyCharacter(name = ''): Character { return { name, description: '', identity: '', outfit: '', personality: '', outfitMode: 'reference' }; }
 function withAssets(existing: Asset[], incoming: Asset[]) { return Array.from(new Map([...existing, ...incoming].map(asset => [asset.id, asset])).values()); }
 function withJobs(existing: Job[], incoming: Job[]) { return Array.from(new Map([...existing, ...incoming].map(job => [job.id, job])).values()); }
 

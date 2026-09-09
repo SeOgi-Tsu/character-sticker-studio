@@ -6,7 +6,7 @@ import type { ProviderSettings, RunningHubSettings, RunningHubNode } from '../sr
 export class ProviderError extends Error {
   constructor(message:string, readonly uncertain=false) { super(message); }
 }
-export interface GenerationInput { settings:ProviderSettings; prompt:string; reference?:Buffer; signal:AbortSignal; remoteTaskId?:string; onRemoteTaskId?:(id:string)=>void|Promise<void>; }
+export interface GenerationInput { settings:ProviderSettings; prompt:string; reference?:Buffer; secondaryReference?:Buffer; signal:AbortSignal; remoteTaskId?:string; onRemoteTaskId?:(id:string)=>void|Promise<void>; }
 export interface ImageProvider { generate(input:GenerationInput):Promise<Buffer>; }
 export const providerDocs = {
  openai:'https://developers.openai.com/api/reference/resources/images',
@@ -118,11 +118,11 @@ export function validateRunningHubSettings(value:unknown):RunningHubSettings {
   if(extra&&(typeof n.fieldValue!=='string'||n.fieldValue.length>12000))throw new ProviderError('额外节点值需要填写文字，最多 12000 字。');
   return {nodeId,fieldName:n.fieldName,...(extra?{fieldValue:n.fieldValue}:{})};
  };
- const promptNode=node(r.promptNode),referenceNode=r.referenceNode===undefined?undefined:node(r.referenceNode);
+ const promptNode=node(r.promptNode),referenceNode=r.referenceNode===undefined?undefined:node(r.referenceNode),styleReferenceNode=r.styleReferenceNode===undefined?undefined:node(r.styleReferenceNode);
  if(!Array.isArray(r.extraNodes)||r.extraNodes.length>32)throw new ProviderError('额外节点最多 32 个。');
  const extraNodes=r.extraNodes.map(n=>node(n,true));
  if(!Number.isInteger(r.outputIndex)||r.outputIndex<0||r.outputIndex>15)throw new ProviderError('输出索引范围为 0–15。');
- return {kind:r.kind,resourceId,promptNode,...(referenceNode?{referenceNode}:{}),extraNodes,outputIndex:r.outputIndex};
+ return {kind:r.kind,resourceId,promptNode,...(referenceNode?{referenceNode}:{}),...(styleReferenceNode?{styleReferenceNode}:{}),extraNodes,outputIndex:r.outputIndex};
 }
 interface RunningHubDependencies {
  pollIntervalMs?:number; timeoutMs?:number;
@@ -142,7 +142,7 @@ async function waitForPoll(milliseconds:number,signal:AbortSignal) {
 
 /** Native app/workflow adapter. Recovery never enters the upload/submission branch. */
 async function generateRunningHub(input:GenerationInput,dependencies:RunningHubDependencies={}) {
- const {settings,reference,prompt,signal}=input;
+ const {settings,reference,secondaryReference,prompt,signal}=input;
  const config=validateRunningHubSettings(settings.runninghub);
  if(!input.remoteTaskId&&reference&&!config.referenceNode)throw new ProviderError('生成角色母版或表情需要配置参考图节点，不能退化为纯文字生成。');
  let taskId=input.remoteTaskId?runningHubId(input.remoteTaskId,'远程任务 ID'):undefined;
@@ -163,13 +163,17 @@ async function generateRunningHub(input:GenerationInput,dependencies:RunningHubD
  try{
   if(!taskId){
    const nodes:RunningHubNode[]=[{...config.promptNode,fieldValue:prompt}];
-   if(reference){
-    const form=new FormData();form.set('file',new Blob([new Uint8Array(reference)],{type:'image/png'}),'reference.png');
+   const uploadReference=async(bytes:Buffer,node:RunningHubNode,filename:string)=>{
+    const form=new FormData();form.set('file',new Blob([new Uint8Array(bytes)],{type:'image/png'}),filename);
     const uploaded=await request('/openapi/v2/media/upload/binary',form,true);
     const fileName=uploaded.fileName??uploaded.filename;
     if(typeof fileName!=='string'||!fileName||fileName.length>2000)throw new ProviderError('RunningHub 上传未返回文件名，未提交生成任务。');
-    nodes.push({...config.referenceNode!,fieldValue:fileName});
-   }
+    nodes.push({...node,fieldValue:fileName});
+   };
+   if(reference)await uploadReference(reference,config.referenceNode!,'reference.png');
+   // A single-reference workflow keeps the original outfit source; the UI
+   // explains that the optional drawing-style image needs its own node.
+   if(reference&&secondaryReference&&config.styleReferenceNode)await uploadReference(secondaryReference,config.styleReferenceNode,'style-reference.png');
    nodes.push(...config.extraNodes);
    phase='submit';
    const submitted=await request(config.kind==='app'?'/task/openapi/ai-app/run':'/task/openapi/create',JSON.stringify({apiKey:settings.apiKey,[config.kind==='app'?'webappId':'workflowId']:config.resourceId,nodeInfoList:nodes}));
@@ -201,18 +205,23 @@ export class CloudImageProvider implements ImageProvider {
  constructor(private readonly dependencies:{runningHub?:RunningHubDependencies}={}){}
  async generate(input:GenerationInput) {
   if(input.settings.provider==='runninghub')return generateRunningHub(input,this.dependencies.runningHub);
-  const {settings,prompt,reference,signal}=input;
+  const {settings,prompt,reference,secondaryReference,signal}=input;
   const controller=AbortSignal.any([signal,AbortSignal.timeout(240_000)]);
   let endpoint:string;let body:BodyInit;const headers:Record<string,string>={};
   if(settings.provider==='openai') {
    headers.Authorization=`Bearer ${settings.apiKey}`;
    endpoint=settings.baseUrl+(reference?'/images/edits':'/images/generations');
-   if(reference){const form=new FormData();form.set('model',settings.model);form.set('prompt',prompt);form.set('n','1');form.set('size',settings.size);form.set('image',new Blob([new Uint8Array(reference)],{type:'image/png'}),'reference.png');body=form;}
+   if(reference){
+    const form=new FormData();form.set('model',settings.model);form.set('prompt',prompt);form.set('n','1');form.set('size',settings.size);
+    form.append(secondaryReference?'image[]':'image',new Blob([new Uint8Array(reference)],{type:'image/png'}),'reference.png');
+    if(secondaryReference)form.append('image[]',new Blob([new Uint8Array(secondaryReference)],{type:'image/png'}),'style-reference.png');
+    body=form;
+   }
    else{headers['Content-Type']='application/json';body=JSON.stringify({model:settings.model,prompt,n:1,size:settings.size});}
   }else{
    headers['x-goog-api-key']=settings.apiKey!;headers['Content-Type']='application/json';
    endpoint=settings.baseUrl+`/models/${encodeURIComponent(settings.model)}:generateContent`;
-   const parts:unknown[]=[{text:prompt}];if(reference)parts.push({inlineData:{mimeType:'image/png',data:reference.toString('base64')}});
+   const parts:unknown[]=[{text:prompt}];if(reference){parts.push({inlineData:{mimeType:'image/png',data:reference.toString('base64')}});if(secondaryReference)parts.push({inlineData:{mimeType:'image/png',data:secondaryReference.toString('base64')}});}
    const imageSize=['1K','2K','4K'].includes(settings.size)?settings.size:'1K';
    const dimensions=/^(\d+)x(\d+)$/.exec(settings.size);
    const gcd=(a:number,b:number):number=>b?gcd(b,a%b):a;

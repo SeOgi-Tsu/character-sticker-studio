@@ -4,6 +4,8 @@ V0.2 adds per-reaction `compositionId`, `catalog.compositions`, RunningHub provi
 
 V0.3 adds `catalog.interactions` and optional Reaction/override fields `interactionId` (observe/approach/offer/touch/squish/comic), `intensity` (integer 1..3), and `intent` (string, max160 UTF-16 code units). These survive project save and recipe import/export. Missing fields preserve old recipe compatibility; prompt defaults are observe/2/no intent. Existing provider requests and settings are unchanged. See [V3_INTERACTION_PLAN.md](V3_INTERACTION_PLAN.md).
 
+V0.4 adds `Character.outfitMode` (reference/custom, default reference), ordered original + secondary chibi reference transport, and optional `RunningHubSettings.styleReferenceNode`. In reference mode new sticker jobs prioritize the original garment source; custom mode permits text-led redesign. See [V4_WARDROBE_CONTRACT.md](V4_WARDROBE_CONTRACT.md); old single-reference jobs remain compatible.
+
 Shared TS types: `src/shared/types.ts`. Content exports `catalog` from `src/shared/catalog.ts` and `buildStickerPrompt(character, reaction, style)`, `buildAnchorPrompt(character, style)`, `buildCharacterPrompt(character)`, `buildNijiPrompt(character, options?)` from `src/shared/prompts.ts`. Niji options: `{layout?: 'single'|'turnaround'|'detail', stylize?: number, raw?: boolean, styleReference?: string}`. All return string.
 
 All API results JSON unless PNG/ZIP; errors `{error:string}` with non-2xx status.

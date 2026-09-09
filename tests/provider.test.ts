@@ -17,10 +17,31 @@ test('Gemini sends native inline reference and receives image parts',async()=>{
  }finally{fixture.closeAllConnections();await new Promise<void>(r=>fixture.close(()=>r()));}
 });
 
+for(const provider of ['openai','gemini'] as const)test(`${provider} sends ordered original and style references in exactly one request`,async()=>{
+ const primary=Buffer.from('original-outfit-bytes'),secondary=Buffer.from('chibi-style-bytes'),output=Buffer.from('result');let calls=0,received:any;
+ const fixture=createServer(async(req,res)=>{calls++;const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(chunk);const body=Buffer.concat(chunks);
+  if(provider==='gemini')received=JSON.parse(body.toString());
+  else received=await new Response(body,{headers:{'content-type':String(req.headers['content-type'])}}).formData();
+  res.setHeader('content-type','application/json');res.end(JSON.stringify(provider==='gemini'?{candidates:[{content:{parts:[{inlineData:{data:output.toString('base64')}}]}}]}:{data:[{b64_json:output.toString('base64')}]}));
+ });await new Promise<void>(r=>fixture.listen(0,'127.0.0.1',r));
+ try{
+  const result=await new CloudImageProvider().generate({settings:{provider,baseUrl:`http://127.0.0.1:${(fixture.address() as {port:number}).port}`,model:'fixture',apiKey:'fixture',size:'1024x1024',concurrency:1},prompt:'Keep original outfit; use anchor only for drawing style',reference:primary,secondaryReference:secondary,signal:new AbortController().signal});
+  assert.equal(calls,1);assert.deepEqual(result,output);
+  if(provider==='gemini')assert.deepEqual(received.contents[0].parts.filter((p:any)=>p.inlineData).map((p:any)=>Buffer.from(p.inlineData.data,'base64')),[primary,secondary]);
+  else{assert.equal(received.has('image'),false);const files=received.getAll('image[]') as File[];assert.equal(files.length,2);assert.deepEqual(await Promise.all(files.map(async file=>Buffer.from(await file.arrayBuffer()))),[primary,secondary]);}
+ }finally{fixture.closeAllConnections();await new Promise<void>(r=>fixture.close(()=>r()));}
+});
+
+test('OpenAI single-image edits keep the legacy image field',async()=>{
+ let fields:FormData|undefined;const fixture=createServer(async(req,res)=>{const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(chunk);fields=await new Response(Buffer.concat(chunks),{headers:{'content-type':String(req.headers['content-type'])}}).formData();res.setHeader('content-type','application/json');res.end(JSON.stringify({data:[{b64_json:Buffer.from('result').toString('base64')}]}));});await new Promise<void>(r=>fixture.listen(0,'127.0.0.1',r));
+ try{await new CloudImageProvider().generate({settings:{provider:'openai',baseUrl:`http://127.0.0.1:${(fixture.address() as {port:number}).port}`,model:'fixture',apiKey:'fixture',size:'1024x1024',concurrency:1},prompt:'single',reference:Buffer.from('one'),signal:new AbortController().signal});assert.ok(fields?.get('image'));assert.equal(fields?.has('image[]'),false);}
+ finally{fixture.closeAllConnections();await new Promise<void>(r=>fixture.close(()=>r()));}
+});
+
 test('rejected image edit is a single failed call, without text fallback or secret echo',async()=>{
  let calls=0;const fixture=createServer(async(req,res)=>{calls++;for await(const _ of req){}res.statusCode=400;res.end(JSON.stringify({error:'provider reflected secret-test-token'}));});await new Promise<void>(r=>fixture.listen(0,'127.0.0.1',r));
  try{
-  await assert.rejects(new CloudImageProvider().generate({settings:{provider:'openai',baseUrl:`http://127.0.0.1:${(fixture.address() as {port:number}).port}/v1`,model:'unsupported-edit',apiKey:'secret-test-token',size:'1024x1024',concurrency:1},prompt:'test',reference:Buffer.from('fixture'),signal:new AbortController().signal}),error=>error instanceof ProviderError&&!error.uncertain&&!error.message.includes('secret-test-token'));
+  await assert.rejects(new CloudImageProvider().generate({settings:{provider:'openai',baseUrl:`http://127.0.0.1:${(fixture.address() as {port:number}).port}/v1`,model:'unsupported-edit',apiKey:'secret-test-token',size:'1024x1024',concurrency:1},prompt:'test',reference:Buffer.from('fixture'),secondaryReference:Buffer.from('second'),signal:new AbortController().signal}),error=>error instanceof ProviderError&&!error.uncertain&&!error.message.includes('secret-test-token'));
   assert.equal(calls,1);
  }finally{fixture.closeAllConnections();await new Promise<void>(r=>fixture.close(()=>r()));}
 });

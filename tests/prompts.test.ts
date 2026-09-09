@@ -12,7 +12,7 @@ const character: Character = {
 };
 
 test('catalog packs resolve to unique, selectable reactions with clear provenance', () => {
-  assert.equal(catalog.reactions.length, 56);
+  assert.equal(catalog.reactions.length, 60);
   assert.equal(new Set(catalog.reactions.map(item => item.id)).size, catalog.reactions.length);
   assert.equal(catalog.styles.length, 3);
   const sourceIds = new Set(catalog.sources.map(item => item.id));
@@ -175,6 +175,68 @@ test('anchor establishes one reusable neutral character, character sheet include
   assert.match(sheet, /outfit detail/i);
   assert.ok(sheet.includes(character.description));
   assert.doesNotMatch(sheet, /--niji/);
+});
+
+test('every prompt builder preserves the original sheet outfit above an inconsistent style anchor', () => {
+  const referenceCharacter = { ...character, outfit: 'open cardigan with a low curved neckline, detached sleeves and asymmetric legwear' };
+  const prompts = [
+    buildAnchorPrompt(referenceCharacter, catalog.styles[0]),
+    buildStickerPrompt(referenceCharacter, catalog.reactions[0], catalog.styles[0]),
+    buildCharacterPrompt(referenceCharacter),
+    buildNijiPrompt(referenceCharacter),
+  ];
+  for (const prompt of prompts) {
+    assert.match(prompt, /original character reference.*outfit authority/i);
+    assert.match(prompt, /outranks.*chibi anchor.*style reference/i);
+    assert.match(prompt, /if two reference images are supplied.*first.*original.*identity.*outfit.*second.*face.*drawing.style.*anchor only.*original controls clothes/i);
+    assert.match(prompt, /garment types.*neckline contour and depth.*open or closed layering.*shoulder and sleeve.*hem.*legwear.*accessor/i);
+    assert.match(prompt, /simplify.*rendering.*not.*redesign/i);
+    assert.match(prompt, /do not.*add fabric.*change coverage/i);
+    assert.match(prompt, /outfit notes clarify.*do not override/i);
+    assert.ok(prompt.includes(referenceCharacter.outfit));
+    assert.doesNotMatch(prompt, /must wear.*(?:turtleneck|pullover)|fully covered|mandatory.*high.neck/i);
+  }
+});
+
+test('explicit custom outfit mode authorizes the user design in all builders without reference conflicts', () => {
+  const customized = { ...character, outfitMode: 'custom' as const, outfit: 'a navy raincoat with brass buttons and yellow boots' };
+  for (const prompt of [buildAnchorPrompt(customized, catalog.styles[1]), buildStickerPrompt(customized, catalog.reactions[0], catalog.styles[1]), buildCharacterPrompt(customized), buildNijiPrompt(customized)]) {
+    assert.match(prompt, /user explicitly chose.*custom outfit/i);
+    assert.match(prompt, /user.*outfit text.*overrides.*reference clothing/i);
+    assert.ok(prompt.includes(customized.outfit));
+    assert.doesNotMatch(prompt, /original character reference.*outfit authority|outfit notes clarify.*do not override|original controls clothes/i);
+    assert.match(prompt, /identity.*hair.*eyes/i);
+  }
+});
+
+test('described characters without a reference can define clothes without inventing reference authority', () => {
+  const described = { ...character, referenceAssetId: undefined, anchorAssetId: undefined };
+  assert.match(buildAnchorPrompt(described, catalog.styles[0]), /no original character reference.*user.*outfit text/i);
+  assert.match(buildCharacterPrompt(described), /no original character reference.*user.*outfit text/i);
+});
+
+test('half and full-body interaction pack adds four recipes while preserving previous 56 and seven framing types', () => {
+  const oldPack = catalog.packs.find(item => item.id === 'all56')!;
+  assert.equal(oldPack.reactionIds.length, 56);
+  assert.equal(catalog.packs.find(item => item.id === 'all60')!.reactionIds.length, 60);
+  assert.equal(catalog.compositions.length, 7);
+  const newIds = ['viewer-offer', 'tiptoe-wave', 'tiny-confident', 'thoughtful-sulk'];
+  assert.deepEqual(catalog.reactions.filter(item => !oldPack.reactionIds.includes(item.id)).map(item => item.id), newIds);
+  const pack = catalog.packs.find(item => item.id === 'body-interaction12')!;
+  assert.ok(pack, 'a dedicated half/full-body pack must be selectable');
+  const selected = pack.reactionIds.map(id => catalog.reactions.find(item => item.id === id)!);
+  assert.equal(selected.length, 12);
+  assert.equal(selected.filter(item => item.compositionId === 'fullbody').length, 6);
+  assert.equal(selected.filter(item => item.compositionId === 'halfbody').length, 6);
+  assert.ok(new Set(selected.map(item => item.interactionId ?? 'observe')).size >= 5);
+  for (const id of newIds) {
+    assert.ok(pack.reactionIds.includes(id));
+    const reaction = catalog.reactions.find(item => item.id === id)!;
+    const prompt = buildStickerPrompt(character, reaction, catalog.styles[0]);
+    assert.ok(reaction.intent && reaction.intent.length > 8);
+    assert.match(prompt, /waist-up medium framing|full-body wide framing/i);
+    assert.doesNotMatch(prompt, /close-up framing:|whale tail|whale fins/i);
+  }
 });
 
 test('Niji sheet defaults use Niji 7 and manual-import-compatible parameters', () => {

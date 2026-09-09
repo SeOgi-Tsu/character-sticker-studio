@@ -21,7 +21,7 @@ function requestId(value:unknown){return idText(value);}
 function stringArray(value:unknown,max=64){if(!Array.isArray(value)||value.length>max||value.some(v=>typeof v!=='string'||v.length>100))fail('选项列表格式无效。');return [...new Set(value as string[])];}
 function safeSettings(config:ProviderSettings):ProviderSettings{const {apiKey,...safe}=config;return {...safe,hasApiKey:Boolean(apiKey)};}
 const defaults:ProviderSettings={provider:'openai',baseUrl:'https://api.openai.com/v1',model:'gpt-image-2',size:'1024x1024',concurrency:2};
-interface StoredJob { job:Job; settings?:ProviderSettings; referenceId?:string; captionText?:string; }
+interface StoredJob { job:Job; settings?:ProviderSettings; referenceId?:string; secondaryReferenceId?:string; captionText?:string; }
 interface Dedup { signature:string; ids:string[]; }
 export interface AppOptions {dataDir?:string;frontendDir?:string;token?:string;allowedOrigins?:string[];allowedHosts?:string[];autoStart?:boolean;provider?:ImageProvider;}
 
@@ -69,7 +69,9 @@ export function createApp(options:AppOptions={}) {
  const getJobs=()=>store.all<StoredJob>('jobs').map(record=>record.job);
  const getReaction=(project:Project,id:string):Reaction=>{const reaction=[...catalog.reactions,...project.customReactions].find(r=>r.id===id);if(!reaction)fail('表情选项不存在，请刷新后重试。');return {...reaction!,...project.overrides[id],id};};
  function validateCharacter(input:unknown,stripAssets=false):Character{
-  const c=object(input);const result:Character={name:text(c.name,'新角色',100),description:text(c.description),identity:text(c.identity),outfit:text(c.outfit),personality:text(c.personality)};
+  const c=object(input);const outfitMode=c.outfitMode===undefined?'reference':c.outfitMode;
+  if(!['reference','custom'].includes(outfitMode))fail('服装依据需要选择沿用原图服装或按文字换装。');
+  const result:Character={name:text(c.name,'新角色',100),description:text(c.description),identity:text(c.identity),outfit:text(c.outfit),personality:text(c.personality),outfitMode};
   if(!stripAssets)for(const field of ['referenceAssetId','anchorAssetId'] as const){if(c[field]){const id=idText(c[field]);if(!store.get<Asset>('assets',id))fail('找不到角色参考图，请重新上传。');result[field]=id;}}
   return result;
  }
@@ -104,7 +106,7 @@ export function createApp(options:AppOptions={}) {
   const captions:Project['captions']=Object.create(null);for(const [id,value] of Object.entries(object(p.captions??base.captions))){if(!known.has(id))continue;const c=object(value);const color=text(c.color,'#ffffff',7),stroke=text(c.stroke,'#3b2332',7);if(!/^#[0-9a-fA-F]{6}$/.test(color)||!/^#[0-9a-fA-F]{6}$/.test(stroke))fail('文字颜色需要六位十六进制色值。');const fontSize=Number(c.fontSize??52);if(!Number.isFinite(fontSize)||fontSize<12||fontSize>120)fail('字号范围为 12–120。');captions[id]={text:text(c.text,'',48),enabled:c.enabled!==false,color,stroke,position:c.position==='top'?'top':'bottom',fontSize};}
   return {...base,name:text(p.name,base.name,100),character:p.character===undefined?base.character:validateCharacter(p.character,stripAssets),styleId,selectedIds,customReactions,overrides,captions,updatedAt:now()};
  }
- function newProject():Project{const date=now();return {id:randomUUID(),name:'Margaret 的表情工坊',character:{name:'Margaret',description:'可爱、亲近、有一点小傲娇的虚拟角色',identity:'浅金色双马尾，红色眼睛，黑色蝴蝶结，金色心形饰件',outfit:'保留参考图中的服装剪影、配色和饰件',personality:'软萌、活泼，情绪表达鲜明'},styleId:catalog.styles[0].id,selectedIds:catalog.packs[0]?.reactionIds||catalog.reactions.slice(0,24).map(r=>r.id),customReactions:[],overrides:{},captions:{},createdAt:date,updatedAt:date};}
+ function newProject():Project{const date=now();return {id:randomUUID(),name:'Margaret 的表情工坊',character:{name:'Margaret',description:'可爱、亲近、有一点小傲娇的虚拟角色',identity:'浅金色双马尾，红色眼睛，黑色蝴蝶结，金色心形饰件',outfit:'保留参考图中的服装剪影、配色和饰件',outfitMode:'reference',personality:'软萌、活泼，情绪表达鲜明'},styleId:catalog.styles[0].id,selectedIds:catalog.packs[0]?.reactionIds||catalog.reactions.slice(0,24).map(r=>r.id),customReactions:[],overrides:{},captions:{},createdAt:date,updatedAt:date};}
  if(store.all('projects').length===0){const initial=newProject();store.put('projects',initial.id,initial);}
  for(const record of store.all<StoredJob>('jobs'))if(record.job.status==='running'||(record.job.status==='unknown'&&record.job.provider==='runninghub'&&record.job.remoteTaskId)){
   const recoverable=record.job.provider==='runninghub'&&Boolean(record.job.remoteTaskId);
@@ -116,8 +118,9 @@ export function createApp(options:AppOptions={}) {
   try{
    if(!record.settings?.apiKey)throw new ProviderError('队列中的接口配置不完整，请重新配置后手动重试。');
    const reference=record.referenceId&&!record.job.remoteTaskId?await images.load(record.referenceId):undefined;
+   const secondaryReference=record.secondaryReferenceId&&!record.job.remoteTaskId&&!(record.settings.provider==='runninghub'&&!record.settings.runninghub?.styleReferenceNode)?await images.load(record.secondaryReferenceId):undefined;
    if(controller.signal.aborted)return;
-   const result=await provider.generate({settings:record.settings,prompt:record.job.prompt,reference,signal:controller.signal,remoteTaskId:record.job.remoteTaskId,onRemoteTaskId:id=>{
+   const result=await provider.generate({settings:record.settings,prompt:record.job.prompt,reference,secondaryReference,signal:controller.signal,remoteTaskId:record.job.remoteTaskId,onRemoteTaskId:id=>{
     // Cancellation and persistence may race with the submit response: keep the latest status.
     record.job=getStoredJob(record.job.id).job;
     updateJob(record,{remoteTaskId:id});
@@ -169,15 +172,18 @@ export function createApp(options:AppOptions={}) {
   const reactionIds=kind==='sticker'?stringArray(body.reactionIds??getProject(projectId).selectedIds):[];
   const signature=JSON.stringify({projectId,kind,reactionIds});const previous=deduplicate(key,signature);if(previous)return res.json({jobs:previous});
   const project=getProject(projectId),config=readyConfig();const style=catalog.styles.find(s=>s.id===project.styleId)!;
-  const referenceId=kind==='sticker'?project.character.anchorAssetId||project.character.referenceAssetId:project.character.referenceAssetId;
+  const character=project.character;
+  const originalFirst=kind==='sticker'&&character.outfitMode!=='custom'&&Boolean(character.referenceAssetId);
+  const referenceId=kind==='sticker'?(originalFirst?character.referenceAssetId:character.anchorAssetId||character.referenceAssetId):character.referenceAssetId;
+  const secondaryReferenceId=originalFirst&&character.anchorAssetId!==referenceId?character.anchorAssetId:undefined;
   if(kind!=='character'&&!referenceId)fail('请先上传角色参考图，或导入并选定角色立绘。');
-  if(referenceId&&!store.get<Asset>('assets',referenceId))fail('参考图不存在，请重新上传。');
+  for(const id of [referenceId,secondaryReferenceId])if(id&&!store.get<Asset>('assets',id))fail('参考图不存在，请重新上传。');
   requireReferenceMapping(config,referenceId);
   if(kind==='sticker'&&!reactionIds.length)fail('请先选择至少一个表情。');
   const records:StoredJob[]=(kind==='sticker'?reactionIds:[undefined]).map(reactionId=>{
    const reaction=reactionId?getReaction(project,reactionId):undefined;
    const prompt=kind==='sticker'?buildStickerPrompt(project.character,reaction!,style):kind==='anchor'?buildAnchorPrompt(project.character,style):buildCharacterPrompt(project.character);
-   const date=now();return {job:{id:randomUUID(),projectId,kind,reactionId,name:reaction?.name||(kind==='anchor'?'Q 版母版':'角色参考图'),prompt,status:'queued',createdAt:date,updatedAt:date,model:config.model,provider:config.provider},settings:structuredClone(config),referenceId,captionText:reaction?.caption};
+   const date=now();return {job:{id:randomUUID(),projectId,kind,reactionId,name:reaction?.name||(kind==='anchor'?'Q 版母版':'角色参考图'),prompt,status:'queued',createdAt:date,updatedAt:date,model:config.model,provider:config.provider},settings:structuredClone(config),referenceId,secondaryReferenceId,captionText:reaction?.caption};
   });res.status(201).json({jobs:saveBatch(key,signature,records)});
  });
  app.post('/api/jobs/import',(req,res)=>{const body=object(req.body);const project=getProject(idText(body.projectId)),asset=store.get<Asset>('assets',idText(body.assetId));if(!asset)fail('导入图片不存在。');const kind=body.kind;if(!['sticker','anchor','character'].includes(kind))fail('导入类型无效。');const reactionId=kind==='sticker'?idText(body.reactionId):undefined;const reaction=reactionId?getReaction(project,reactionId):undefined;const date=now();const job:Job={id:randomUUID(),projectId:project.id,kind,reactionId,name:text(body.name,reaction?.name||'外部导入',100),prompt:text(body.provenance,'外部导入图片',20000),status:'succeeded',asset,createdAt:date,updatedAt:date,model:'imported',provider:'imported'};store.put('jobs',job.id,{job,captionText:reaction?.caption});res.status(201).json(job);});

@@ -40,6 +40,8 @@ const reactionCompositions: Record<string, CompositionId> = {
   'hug-lunge': 'halfbody', 'receive-headpat': 'halfbody', 'flower-delivery': 'prop',
   'corner-check': 'peek', 'cheek-pinch': 'closeup', 'tiny-boss': 'fullbody',
   'instant-pancake': 'action', 'heart-window': 'closeup',
+  'viewer-offer': 'fullbody', 'tiptoe-wave': 'fullbody',
+  'tiny-confident': 'fullbody', 'thoughtful-sulk': 'halfbody',
 };
 
 // Older projects have no staging field. Resolve their stable reaction IDs to
@@ -150,8 +152,28 @@ const interactionReactions: Reaction[] = [
   },
 ];
 
+const bodyInteractionReactions: Reaction[] = [
+  {
+    ...reaction('viewer-offer', '端着小茶来找你', '喝一口嘛', '全身半身互动', '🍵', 'Stand with both feet close together and knees slightly bent, lean forward earnestly and extend one small plain teacup toward the viewer with both connected hands supporting it. Keep the cup below the neckline and turn the elbows outward so the garment opening remains readable. Lift the chin with an expectant little smile and calm attentive eyes; the tiny careful delivery is the affectionate gesture.', ['全身递茶', '照顾你', '等你接住'], [], true),
+    interactionId: 'offer', intensity: 2, intent: '把一杯暖茶小心端过来，等对方接住；用完整小身体和伸出的双臂表达照顾。',
+  },
+  {
+    ...reaction('tiptoe-wave', '踮高一点你就看到我', '这里这里', '全身半身互动', '👋', 'Balance eagerly on both tiptoes, stretch one arm high in a broad open-hand wave and swing the other arm sideways for balance. Lean the torso a little to one side, lift the shoulders with effort and look directly toward the viewer with one delighted closed eye and a bright open smile. Let the lifted heels and uneven arms explain the effort of a tiny person trying to be noticed.', ['全身踮脚', '打招呼', '努力被看见'], [], true),
+    interactionId: 'approach', intensity: 3, intent: '在人群里努力踮脚招手，迫不及待让对方看到自己；小个子的认真劲让人想回应。',
+  },
+  {
+    ...reaction('tiny-confident', '这么小也能替你撑场', '我罩你呀', '全身半身互动', '😎', 'Stand as a deliberately tiny figure with feet planted wide, one hand pressed confidently to the waist and the other small arm extended sideways as if shielding an unseen friend behind. Push the shoulders back, tilt the chin proudly upward and hold a narrow-eyed perfectly serious expression with one tiny smug smile. The single joke is a very small body making an extremely confident protective promise; do not add another person or prop.', ['全身护短', '小小自信', '反差搞怪'], ['whale-static-2026'], true),
+    interactionId: 'comic', intensity: 2, intent: '嘴上说我罩你，实际只有小小一只；认真护短与体型的反差既好笑又有陪伴感。',
+  },
+  {
+    ...reaction('thoughtful-sulk', '小脑袋还在努力讲理', '让我狡辩', '全身半身互动', '🤨', 'Tilt the torso sideways with one forearm folded across the waist, rest the opposite elbow on it and press one small finger thoughtfully against the temple. Turn the face back toward the viewer with one raised eyebrow, one puffed cheek and a tiny off-center pout, as if carefully inventing a very unconvincing argument. Keep both arms and the waist readable so the lopsided thinking posture carries the joke.', ['半身嘴硬', '歪身思考', '欠欠的'], ['whale-static-2026'], true),
+    interactionId: 'observe', intensity: 2, intent: '明明没道理，还在认真构思下一句狡辩；用歪身抱臂和偷看对方的眼神接住打趣。',
+  },
+];
+
 const originalReactions = [...cute, ...chaos, ...daily, ...companion];
-const reactions = [...originalReactions, ...interactionReactions];
+const previousReactions = [...originalReactions, ...interactionReactions];
+const reactions = [...previousReactions, ...bodyInteractionReactions];
 
 export const catalog: Catalog = {
   reactions,
@@ -164,12 +186,14 @@ export const catalog: Catalog = {
   ],
   packs: [
     { id: 'interaction12', name: '可爱犯规 12', description: '扑抱、摸头、递大花、软脸和理直气壮的小小一只；强互动穿插安静陪伴，7 种构图。原创编辑精选，非使用量排名。', reactionIds: ['hug-lunge', 'receive-headpat', 'flower-delivery', 'corner-check', 'cheek-pinch', 'tiny-boss', 'instant-pancake', 'heart-window', 'waao', 'rolling', 'blanket', 'thanks'] },
+    { id: 'body-interaction12', name: '全身半身互动 12', description: '6 张全身＋6 张半身：踮脚找你、认真递茶、小个子护短和嘴硬思考，让双臂与身体一起传情。原创编辑精选，非热度排名。', reactionIds: ['viewer-offer', 'tiptoe-wave', 'tiny-confident', 'thoughtful-sulk', 'tiny-boss', 'waiting', 'thanks', 'hug-lunge', 'receive-headpat', 'head-tilt', 'shy', 'smug'] },
     { id: 'mixed12', name: '百变可爱 12', description: '从贴脸到全身，从跑跳到被窝：7 种构图交错，先试这套。编辑精选，非热度排名。', reactionIds: ['waao', 'hug', 'running', 'peek', 'flower', 'low-battery', 'desk-bang', 'blanket', 'victory', 'rolling', 'puffed-cheeks', 'busy'] },
     { id: 'cute12', name: '贴脸可爱 12', description: '偏好大头和软萌互动时选这套，也穿插半身、跪坐和道具。不是使用量排行榜。', reactionIds: cute.map(item => item.id) },
     { id: 'chaos12', name: '群聊发疯 12', description: '眼神死、假哭、拍桌、蠕动；一眼能接住情绪的反应精选。', reactionIds: chaos.map(item => item.id) },
     { id: 'daily24', name: '日常好用 24', description: '在可爱和群聊反应里加入收到、谢谢、干饭、没电；编辑按聊天场景配齐。', reactionIds: ['waao', 'head-tilt', 'peek', 'puffed-cheeks', 'cling', 'hug', 'puppy-eyes', 'flower', 'deadpan', 'fake-cry', 'stunned', 'cant-stop-laughing', ...daily.map(item => item.id)] },
     { id: 'all48', name: '经典反应库 48', description: '保留原有四类和完整配方；每张仍可修改构图、互动与文案。', reactionIds: originalReactions.map(item => item.id) },
-    { id: 'all56', name: '全部反应 56', description: '经典 48 张加上 8 张互动新作；自由组合强反应、幽默和安静可爱。建议先试少量。', reactionIds: reactions.map(item => item.id) },
+    { id: 'all56', name: '全部反应 56', description: '经典 48 张加上 8 张互动新作；自由组合强反应、幽默和安静可爱。建议先试少量。', reactionIds: previousReactions.map(item => item.id) },
+    { id: 'all60', name: '全部反应 60', description: '保留前 56 张，再加 4 张半身与全身互动。每张都可自由修改构图、张力和文案。', reactionIds: reactions.map(item => item.id) },
   ],
   sources: [
     { id: 'whale-static-2026', title: '2026 小鲸鱼 / DeepSeek 社区静态图案例', url: 'https://www.vgover.com/news/227900', checkedAt: '2026-09-09', evidence: '页面标注 2026-07-31；本次实际查看其中 5 张 JPEG 静态图，包括前景指向角色的手、仰脸叉腰的理直气壮反应、放大伸手与斜头半身，以及同一角色切换主客关系。提炼接触因果、近大远小和预期反转，不复制角色、画面或文字。摸头、软脸等新作是原创设计延伸；这些案例不能证明最高传播量或 QQ 使用排名。' },

@@ -1,6 +1,7 @@
 export interface Character {
   name: string; description: string; identity: string; outfit: string; personality: string;
   referenceAssetId?: string; anchorAssetId?: string;
+  outfitMode?: 'reference' | 'custom';
 }
 export interface Caption { text: string; enabled: boolean; color: string; stroke: string; position: 'top' | 'bottom'; fontSize: number; }
 export type CompositionId = 'closeup' | 'halfbody' | 'fullbody' | 'action' | 'prop' | 'scene' | 'peek';
@@ -33,7 +34,7 @@ export interface Job {
 export interface RunningHubNode { nodeId: string; fieldName: string; fieldValue?: string; }
 export interface RunningHubSettings {
   kind: 'app' | 'workflow'; resourceId: string;
-  promptNode: RunningHubNode; referenceNode?: RunningHubNode;
+  promptNode: RunningHubNode; referenceNode?: RunningHubNode; styleReferenceNode?: RunningHubNode;
   extraNodes: RunningHubNode[]; outputIndex: number;
 }
 export interface ProviderSettings {
