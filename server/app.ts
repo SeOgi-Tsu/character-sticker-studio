@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import archiver from 'archiver';
 import { catalog } from '../src/shared/catalog.ts';
 import { buildAnchorPrompt, buildCharacterPrompt, buildStickerPrompt } from '../src/shared/prompts.ts';
+import { captionStyles, defaultCaptionFor, resolveCaptionMode } from '../src/shared/typography.ts';
 import type { Asset, Caption, Character, Job, Project, ProviderSettings, Reaction } from '../src/shared/types.ts';
 import { Store } from './store.ts';
 import { Images, exportName } from './images.ts';
@@ -72,6 +73,7 @@ export function createApp(options:AppOptions={}) {
   const c=object(input);const outfitMode=c.outfitMode===undefined?'reference':c.outfitMode;
   if(!['reference','custom'].includes(outfitMode))fail('服装依据需要选择沿用原图服装或按文字换装。');
   const result:Character={name:text(c.name,'新角色',100),description:text(c.description),identity:text(c.identity),outfit:text(c.outfit),personality:text(c.personality),outfitMode};
+  if(c.memePersona!==undefined)result.memePersona=text(c.memePersona,'',1200);
   if(!stripAssets)for(const field of ['referenceAssetId','anchorAssetId'] as const){if(c[field]){const id=idText(c[field]);if(!store.get<Asset>('assets',id))fail('找不到角色参考图，请重新上传。');result[field]=id;}}
   return result;
  }
@@ -93,8 +95,22 @@ export function createApp(options:AppOptions={}) {
    result.intensity=r.intensity;
   }
   if(r.intent!==undefined)result.intent=text(r.intent,'',160);
+  if(r.textMode!==undefined){if(!['none','overlay','generated'].includes(r.textMode))fail('文字方式无效。');result.textMode=r.textMode;}
+  if(r.captionStyleId!==undefined){if(!captionStyles.some(s=>s.id===r.captionStyleId))fail('文字风格不存在。');result.captionStyleId=r.captionStyleId;}
   if(!partial){result.id=idText(r.id);result.tags=r.tags?stringArray(r.tags,20):[];}
   return result;
+ }
+ function captionText(value:unknown){const result=text(value,'',96);if(Array.from(result).length>48)fail('表情文字最多 48 字（含换行）。');return result;}
+ function validateCaption(input:unknown):Caption{
+  const c=object(input),color=text(c.color,'#ffffff',7),stroke=text(c.stroke,'#3b2332',7);
+  if(!/^#[0-9a-fA-F]{6}$/.test(color)||!/^#[0-9a-fA-F]{6}$/.test(stroke))fail('文字颜色需要六位十六进制色值。');
+  const fontSize=Number(c.fontSize??52);if(!Number.isFinite(fontSize)||fontSize<12||fontSize>120)fail('字号范围为 12–120。');
+  if(c.enabled!==undefined&&typeof c.enabled!=='boolean')fail('文字开关需要为布尔值。');
+  if(c.mode!==undefined&&!['none','overlay','generated'].includes(c.mode))fail('文字方式无效。');
+  if(c.styleId!==undefined&&!captionStyles.some(style=>style.id===c.styleId))fail('文字风格不存在。');
+  if(c.position!==undefined&&!['top','bottom','left','right'].includes(c.position))fail('文字位置需要选择上、下、左或右。');
+  if(c.rotation!==undefined&&(typeof c.rotation!=='number'||!Number.isFinite(c.rotation)||c.rotation< -20||c.rotation>20))fail('文字旋转范围为 -20° 到 20°。');
+  return {text:captionText(c.text),enabled:c.enabled!==false,color,stroke,position:c.position??'bottom',fontSize,...(c.mode!==undefined?{mode:c.mode}:{}),...(c.styleId!==undefined?{styleId:c.styleId}:{}),...(c.rotation!==undefined?{rotation:c.rotation}:{})};
  }
  function validateProject(input:unknown,prior?:Project,stripAssets=false):Project{
   const p=object(input);const base=prior||newProject();
@@ -103,7 +119,7 @@ export function createApp(options:AppOptions={}) {
   const customReactions=(customInput as unknown[]).map(r=>validateReaction(r) as Reaction);const known=new Set(catalog.reactions.map(r=>r.id));for(const reaction of customReactions){if(known.has(reaction.id))fail('自定义表情编号重复。');known.add(reaction.id);}
   const selectedIds=p.selectedIds===undefined?base.selectedIds:stringArray(p.selectedIds);if(selectedIds.some(id=>!known.has(id)))fail('选中的表情不存在。');
   const overrides:Project['overrides']=Object.create(null);for(const [id,value] of Object.entries(object(p.overrides??base.overrides))){if(!known.has(id))continue;overrides[id]=validateReaction(value,true);}
-  const captions:Project['captions']=Object.create(null);for(const [id,value] of Object.entries(object(p.captions??base.captions))){if(!known.has(id))continue;const c=object(value);const color=text(c.color,'#ffffff',7),stroke=text(c.stroke,'#3b2332',7);if(!/^#[0-9a-fA-F]{6}$/.test(color)||!/^#[0-9a-fA-F]{6}$/.test(stroke))fail('文字颜色需要六位十六进制色值。');const fontSize=Number(c.fontSize??52);if(!Number.isFinite(fontSize)||fontSize<12||fontSize>120)fail('字号范围为 12–120。');captions[id]={text:text(c.text,'',48),enabled:c.enabled!==false,color,stroke,position:c.position==='top'?'top':'bottom',fontSize};}
+  const captions:Project['captions']=Object.create(null);for(const [id,value] of Object.entries(object(p.captions??base.captions))){if(!known.has(id))continue;captions[id]=validateCaption(value);}
   return {...base,name:text(p.name,base.name,100),character:p.character===undefined?base.character:validateCharacter(p.character,stripAssets),styleId,selectedIds,customReactions,overrides,captions,updatedAt:now()};
  }
  function newProject():Project{const date=now();return {id:randomUUID(),name:'Margaret 的表情工坊',character:{name:'Margaret',description:'可爱、亲近、有一点小傲娇的虚拟角色',identity:'浅金色双马尾，红色眼睛，黑色蝴蝶结，金色心形饰件',outfit:'保留参考图中的服装剪影、配色和饰件',outfitMode:'reference',personality:'软萌、活泼，情绪表达鲜明'},styleId:catalog.styles[0].id,selectedIds:catalog.packs[0]?.reactionIds||catalog.reactions.slice(0,24).map(r=>r.id),customReactions:[],overrides:{},captions:{},createdAt:date,updatedAt:date};}
@@ -139,7 +155,7 @@ export function createApp(options:AppOptions={}) {
  function deduplicate(key:string,signature:string):Job[]|undefined{const prior=store.get<Dedup>('requests',key);if(!prior)return;if(prior.signature!==signature)fail('此请求编号已用于另一项操作，请刷新后重新提交。',409);return prior.ids.map(id=>getStoredJob(id).job);}
  function saveBatch(key:string,signature:string,records:StoredJob[]){store.transaction(()=>{for(const record of records)store.put('jobs',record.job.id,record);store.put('requests',key,{signature,ids:records.map(r=>r.job.id)});});setImmediate(pump);return records.map(r=>r.job);}
  function portable(project:Project){const {referenceAssetId,anchorAssetId,...character}=project.character;const {id,createdAt,updatedAt,...rest}=project;return {version:1,project:{...rest,character},references:[referenceAssetId&&{role:'reference',filename:store.get<Asset>('assets',referenceAssetId)?.filename},anchorAssetId&&{role:'anchor',filename:store.get<Asset>('assets',anchorAssetId)?.filename}].filter(Boolean)};}
- function captionFor(job:Job):Caption|undefined{if(!job.reactionId)return;const p=getProject(job.projectId);const reaction=[...catalog.reactions,...p.customReactions].find(r=>r.id===job.reactionId);const caption=reaction?getReaction(p,job.reactionId).caption:getStoredJob(job.id).captionText||job.name;return p.captions[job.reactionId]||{text:caption,enabled:true,color:'#ffffff',stroke:'#382537',position:'bottom',fontSize:52};}
+ function captionFor(job:Job):Caption|undefined{if(!job.reactionId)return;const p=getProject(job.projectId);if(p.captions[job.reactionId])return p.captions[job.reactionId];const reaction=[...catalog.reactions,...p.customReactions].find(r=>r.id===job.reactionId);if(reaction)return defaultCaptionFor(getReaction(p,job.reactionId));return {text:getStoredJob(job.id).captionText||job.name,enabled:true,color:'#ffffff',stroke:'#382537',position:'bottom',fontSize:52};}
  function renderSize(value:unknown){const size=Number(value||512);if(![128,256,512,1024].includes(size))fail('导出尺寸支持 128、256、512 或 1024。');return size;}
 
  app.get('/api/health',(_req,res)=>res.json({ok:true}));
@@ -182,11 +198,21 @@ export function createApp(options:AppOptions={}) {
   if(kind==='sticker'&&!reactionIds.length)fail('请先选择至少一个表情。');
   const records:StoredJob[]=(kind==='sticker'?reactionIds:[undefined]).map(reactionId=>{
    const reaction=reactionId?getReaction(project,reactionId):undefined;
-   const prompt=kind==='sticker'?buildStickerPrompt(project.character,reaction!,style):kind==='anchor'?buildAnchorPrompt(project.character,style):buildCharacterPrompt(project.character);
-   const date=now();return {job:{id:randomUUID(),projectId,kind,reactionId,name:reaction?.name||(kind==='anchor'?'Q 版母版':'角色参考图'),prompt,status:'queued',createdAt:date,updatedAt:date,model:config.model,provider:config.provider},settings:structuredClone(config),referenceId,secondaryReferenceId,captionText:reaction?.caption};
+   const caption=reaction?validateCaption(project.captions[reaction.id]||defaultCaptionFor(reaction)):undefined;
+   const textMode=kind==='sticker'?resolveCaptionMode(caption):'none';
+   if(textMode==='generated'&&!caption?.text.trim())fail('生图带字需要填写文字；想要无字图片请选择不加字。');
+   const prompt=kind==='sticker'?buildStickerPrompt(project.character,reaction!,style,caption):kind==='anchor'?buildAnchorPrompt(project.character,style):buildCharacterPrompt(project.character);
+   const date=now();return {job:{id:randomUUID(),projectId,kind,reactionId,name:reaction?.name||(kind==='anchor'?'Q 版母版':'角色参考图'),prompt,status:'queued',createdAt:date,updatedAt:date,model:config.model,provider:config.provider,textMode,...(textMode==='generated'?{generatedText:caption!.text}:{})},settings:structuredClone(config),referenceId,secondaryReferenceId,captionText:caption?.text};
   });res.status(201).json({jobs:saveBatch(key,signature,records)});
  });
- app.post('/api/jobs/import',(req,res)=>{const body=object(req.body);const project=getProject(idText(body.projectId)),asset=store.get<Asset>('assets',idText(body.assetId));if(!asset)fail('导入图片不存在。');const kind=body.kind;if(!['sticker','anchor','character'].includes(kind))fail('导入类型无效。');const reactionId=kind==='sticker'?idText(body.reactionId):undefined;const reaction=reactionId?getReaction(project,reactionId):undefined;const date=now();const job:Job={id:randomUUID(),projectId:project.id,kind,reactionId,name:text(body.name,reaction?.name||'外部导入',100),prompt:text(body.provenance,'外部导入图片',20000),status:'succeeded',asset,createdAt:date,updatedAt:date,model:'imported',provider:'imported'};store.put('jobs',job.id,{job,captionText:reaction?.caption});res.status(201).json(job);});
+ app.post('/api/jobs/import',(req,res)=>{
+  const body=object(req.body);const project=getProject(idText(body.projectId)),asset=store.get<Asset>('assets',idText(body.assetId));if(!asset)fail('导入图片不存在。');const kind=body.kind;if(!['sticker','anchor','character'].includes(kind))fail('导入类型无效。');
+  const textMode=body.textMode??(kind==='sticker'?'overlay':'none');if(!['none','overlay','generated'].includes(textMode))fail('导入图片的文字方式无效。');
+  if(body.generatedText!==undefined&&textMode!=='generated')fail('只有生图带字图片可以记录已嵌入的文字。');
+  const generatedText=textMode==='generated'?captionText(body.generatedText):undefined;
+  const reactionId=kind==='sticker'?idText(body.reactionId):undefined;const reaction=reactionId?getReaction(project,reactionId):undefined;const date=now();
+  const job:Job={id:randomUUID(),projectId:project.id,kind,reactionId,name:text(body.name,reaction?.name||'外部导入',100),prompt:text(body.provenance,'外部导入图片',20000),status:'succeeded',asset,createdAt:date,updatedAt:date,model:'imported',provider:'imported',textMode,...(generatedText!==undefined?{generatedText}:{})};store.put('jobs',job.id,{job,captionText:reaction?.caption});res.status(201).json(job);
+ });
  app.post('/api/jobs/:id/cancel',(req,res)=>{const record=getStoredJob(String(req.params.id));if(record.job.status==='queued')updateJob(record,record.job.remoteTaskId?{status:'unknown',error:'已停止本地查询；远程任务可能仍在生成或计费。'}:{status:'cancelled',error:'已取消，未提交给图片服务。'});else if(record.job.status==='running'){active.get(record.job.id)?.abort();updateJob(record,{status:'unknown',error:'已停止本地等待；服务商可能仍在生成或计费，请先核对记录。'});}res.json(record.job);});
  app.post('/api/jobs/:id/resume',(req,res)=>{
   const record=getStoredJob(String(req.params.id));
@@ -196,7 +222,7 @@ export function createApp(options:AppOptions={}) {
   res.json(updateJob(record,{status:'queued',error:undefined}));setImmediate(pump);
  });
  app.post('/api/jobs/:id/retry',(req,res)=>{const old=getStoredJob(String(req.params.id)),key=requestId(req.body?.requestId),signature=JSON.stringify({retry:old.job.id});const prior=deduplicate(key,signature);if(prior)return res.json(prior[0]);if(['queued','running'].includes(old.job.status))fail('此任务仍在队列中。',409);if(old.job.provider==='imported')fail('外部导入图片不能通过接口重试。');if(old.job.provider==='runninghub'&&old.job.remoteTaskId&&old.job.status!=='succeeded')fail('已记录 RunningHub 任务 ID，请使用恢复查询；确需重新生成时，从表情选项新建任务。',409);const config=readyConfig();requireReferenceMapping(config,old.referenceId);const date=now();const record:StoredJob={...old,settings:config,job:{...old.job,id:randomUUID(),status:'queued',asset:undefined,error:undefined,remoteTaskId:undefined,provider:config.provider,model:config.model,createdAt:date,updatedAt:date}};res.status(201).json(saveBatch(key,signature,[record])[0]);});
- app.get('/api/jobs/:id/render',async(req,res)=>{const {job}=getStoredJob(String(req.params.id));if(job.status!=='succeeded'||!job.asset)fail('任务尚无可下载的图片。',409);const buffer=await images.render(job.asset!,renderSize(req.query.size),req.query.caption==='0'?undefined:captionFor(job));res.type('png').setHeader('Content-Disposition',`inline; filename="${job.id}.png"`);res.send(buffer);});
+ app.get('/api/jobs/:id/render',async(req,res)=>{const {job}=getStoredJob(String(req.params.id));if(job.status!=='succeeded'||!job.asset)fail('任务尚无可下载的图片。',409);const buffer=await images.render(job.asset!,renderSize(req.query.size),req.query.caption==='0'?undefined:captionFor(job),{embeddedText:job.textMode==='generated'});res.type('png').setHeader('Content-Disposition',`inline; filename="${job.id}.png"`);res.send(buffer);});
  app.get('/api/projects/:id/export',async(req,res)=>{
   const project=getProject(String(req.params.id)),size=renderSize(req.query.size);const latest=new Map<string,Job>();for(const job of getJobs())if(job.projectId===project.id&&job.kind==='sticker'&&job.status==='succeeded'&&job.asset&&job.reactionId)latest.set(job.reactionId,job);
   const jobs=[...latest.values()];if(!jobs.length)fail('还没有成功生成的表情图。请先生成或导入表情。',409);
@@ -206,14 +232,14 @@ export function createApp(options:AppOptions={}) {
    entries.push({ name: `originals/${name}.png`, data: await images.load(job.asset!.id) });
    const resized = await images.render(job.asset!, size);
    entries.push({ name: `resized/${name}.png`, data: resized });
-   const preview = req.query.captions === '1' ? await images.render(job.asset!, size, captionFor(job)) : resized;
+   const preview = req.query.captions === '1' ? await images.render(job.asset!, size, captionFor(job),{embeddedText:job.textMode==='generated'}) : resized;
    rendered.push(preview);
    if (req.query.captions === '1') entries.push({ name: `captioned/${name}.png`, data: preview });
   }
   const contact=await images.contactSheet(rendered,jobs.map(j=>j.name));
   res.type('zip').setHeader('Content-Disposition',`attachment; filename="sticker-pack.zip"; filename*=UTF-8''${encodeURIComponent(exportName(project.name))}.zip`);
   const archive=archiver('zip',{zlib:{level:6}});archive.on('error',error=>{if(!res.headersSent)res.status(500).json({error:'压缩包导出失败，请重试。'});else res.destroy(error);});res.on('close',()=>{if(!res.writableEnded)archive.abort();});archive.pipe(res);
-  for(const entry of entries)archive.append(entry.data,{name:entry.name});archive.append(JSON.stringify({...portable(project),results:jobs.map(({name,reactionId,prompt,provider,model,asset})=>({name,reactionId,prompt,provider,model,filename:asset?.filename,hasAlpha:asset?.hasAlpha}))},null,2),{name:'recipe.json'});archive.append(contact,{name:'contact-sheet.png'});await archive.finalize();
+  for(const entry of entries)archive.append(entry.data,{name:entry.name});archive.append(JSON.stringify({...portable(project),results:jobs.map(({name,reactionId,prompt,provider,model,asset,textMode,generatedText})=>({name,reactionId,prompt,provider,model,filename:asset?.filename,hasAlpha:asset?.hasAlpha,textMode:textMode??'overlay',...(generatedText!==undefined?{generatedText}:{})}))},null,2),{name:'recipe.json'});archive.append(contact,{name:'contact-sheet.png'});await archive.finalize();
  });
  app.use('/api',(_req,_res,next)=>next(new HttpError(404,'接口不存在。')));
  const dist=paths.frontendDir;if(existsSync(join(dist,'index.html'))){app.use(express.static(dist));app.get('/{*path}',(_req,res)=>res.sendFile(join(dist,'index.html')));}

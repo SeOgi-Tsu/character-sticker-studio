@@ -10,7 +10,7 @@ const stream = fs.createWriteStream(destination);
 const zip = archiver('zip', { zlib: { level: 9 } });
 const complete = new Promise((resolve, reject) => { stream.on('close', resolve); stream.on('error', reject); zip.on('error', reject); });
 zip.pipe(stream);
-for (const directory of ['src', 'server', 'docs', 'scripts', 'tests', '.github']) {
+for (const directory of ['src', 'server', 'docs', 'scripts', 'tests', '.github', 'public']) {
   const resolved = path.join(root, directory);
   if (fs.existsSync(resolved)) zip.directory(resolved, directory);
 }

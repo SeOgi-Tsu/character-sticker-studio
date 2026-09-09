@@ -1,0 +1,29 @@
+[
+  {
+    "family": "ZCOOL KuaiLe",
+    "filename": "ZCOOLKuaiLe-Regular.ttf",
+    "revision": "6d49995f5d8f1c7d476760a580ffb89ce1e52c5d",
+    "source": "https://raw.githubusercontent.com/google/fonts/6d49995f5d8f1c7d476760a580ffb89ce1e52c5d/ofl/zcoolkuaile/ZCOOLKuaiLe-Regular.ttf",
+    "license": "https://raw.githubusercontent.com/google/fonts/6d49995f5d8f1c7d476760a580ffb89ce1e52c5d/ofl/zcoolkuaile/OFL.txt",
+    "sha256": "812a6fc1fe54b6d73a419245c32dfeba8aa33104d5be90d1cf6af082007cb71d",
+    "bytes": 1514968
+  },
+  {
+    "family": "Long Cang",
+    "filename": "LongCang-Regular.ttf",
+    "revision": "35e5529ffaf259a96693b048d9d97cdaa76b6837",
+    "source": "https://raw.githubusercontent.com/google/fonts/35e5529ffaf259a96693b048d9d97cdaa76b6837/ofl/longcang/LongCang-Regular.ttf",
+    "license": "https://raw.githubusercontent.com/google/fonts/35e5529ffaf259a96693b048d9d97cdaa76b6837/ofl/longcang/OFL.txt",
+    "sha256": "e5bf2c3f24ef2327c6f136d8f73e2f9dfdf44896fdbeb35a9515f44777bb91bc",
+    "bytes": 5162508
+  },
+  {
+    "family": "Zhi Mang Xing",
+    "filename": "ZhiMangXing-Regular.ttf",
+    "revision": "187e2123ad2710ad8c2fa9955332fe9073e834b1",
+    "source": "https://raw.githubusercontent.com/google/fonts/187e2123ad2710ad8c2fa9955332fe9073e834b1/ofl/zhimangxing/ZhiMangXing-Regular.ttf",
+    "license": "https://raw.githubusercontent.com/google/fonts/187e2123ad2710ad8c2fa9955332fe9073e834b1/ofl/zhimangxing/OFL.txt",
+    "sha256": "644e0cae9b40f0b10ab729a01bd32032e3973bac22be3dccae01bf6ae7fde969",
+    "bytes": 4063532
+  }
+]

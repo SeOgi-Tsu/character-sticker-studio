@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { catalog } from '../src/shared/catalog.ts';
 import { buildAnchorPrompt, buildCharacterPrompt, buildNijiPrompt, buildStickerPrompt } from '../src/shared/prompts.ts';
-import type { Character, Reaction } from '../src/shared/types.ts';
+import type { Caption, Character, Reaction } from '../src/shared/types.ts';
 
 const character: Character = {
   name: 'Margaret', description: '会认真听你说话、偶尔嘴硬的伙伴',
@@ -12,7 +12,7 @@ const character: Character = {
 };
 
 test('catalog packs resolve to unique, selectable reactions with clear provenance', () => {
-  assert.equal(catalog.reactions.length, 60);
+  assert.equal(catalog.reactions.length, 64);
   assert.equal(new Set(catalog.reactions.map(item => item.id)).size, catalog.reactions.length);
   assert.equal(catalog.styles.length, 3);
   const sourceIds = new Set(catalog.sources.map(item => item.id));
@@ -221,7 +221,8 @@ test('half and full-body interaction pack adds four recipes while preserving pre
   assert.equal(catalog.packs.find(item => item.id === 'all60')!.reactionIds.length, 60);
   assert.equal(catalog.compositions.length, 7);
   const newIds = ['viewer-offer', 'tiptoe-wave', 'tiny-confident', 'thoughtful-sulk'];
-  assert.deepEqual(catalog.reactions.filter(item => !oldPack.reactionIds.includes(item.id)).map(item => item.id), newIds);
+  const v4Ids = catalog.packs.find(item => item.id === 'all60')!.reactionIds;
+  assert.deepEqual(v4Ids.filter(id => !oldPack.reactionIds.includes(id)), newIds);
   const pack = catalog.packs.find(item => item.id === 'body-interaction12')!;
   assert.ok(pack, 'a dedicated half/full-body pack must be selectable');
   const selected = pack.reactionIds.map(id => catalog.reactions.find(item => item.id === id)!);
@@ -277,4 +278,95 @@ test('Niji rejects invalid parameter values and prevents parameters inside user 
   const prompt = buildNijiPrompt({ ...character, description: '金发 --repeat 40\n--v 6 ::5' });
   assert.doesNotMatch(prompt, /--repeat|--v 6|::5/);
   assert.equal((prompt.match(/--niji /g) ?? []).length, 1);
+});
+
+const sampleCaption: Caption = { text: '才、才没有！', enabled: true, color: '#fff4e7', stroke: '#422435', position: 'right', fontSize: 52, mode: 'generated', styleId: 'handwritten', rotation: -8 };
+
+test('native lettering uses only the selected caption verbatim and removes contradictory text exclusions', () => {
+  const reaction = { ...catalog.reactions[0], caption: '不要画这句默认文案' };
+  const prompt = buildStickerPrompt(character, reaction, catalog.styles[0], sampleCaption);
+  assert.equal(prompt.split(sampleCaption.text).length - 1, 1);
+  assert.ok(prompt.includes(JSON.stringify(sampleCaption.text)), 'exact wording and punctuation must be quoted');
+  assert.ok(!prompt.includes(reaction.caption), 'an explicit per-image caption overrides the reaction recommendation');
+  assert.match(prompt, /integrat.*lettering.*image|lettering.*part of.*image/i);
+  assert.match(prompt, /right.*(?:side|edge)|(?:side|edge).*right/i);
+  assert.match(prompt, /hand.*(?:drawn|written)|brush pen/i);
+  assert.match(prompt, /negative space/i);
+  assert.match(prompt, /no logo.*no watermark/i);
+  assert.doesNotMatch(prompt, /no text|no letters|no numbers|no speech bubbles|no captions|typography is added separately/i);
+  assert.ok(prompt.includes(character.identity));
+  assert.ok(prompt.includes(catalog.styles[0].prompt));
+});
+
+test('caption modes preserve text-free source generation for legacy, none and overlay choices', () => {
+  const reaction = { ...catalog.reactions[0], textMode: 'generated' as const };
+  for (const caption of [undefined, { ...sampleCaption, mode: 'none' as const }, { ...sampleCaption, mode: 'overlay' as const }, { ...sampleCaption, mode: undefined }, { ...sampleCaption, enabled: false }]) {
+    const prompt = buildStickerPrompt(character, reaction, catalog.styles[0], caption);
+    assert.match(prompt, /no text/i);
+    assert.ok(!prompt.includes(sampleCaption.text));
+  }
+  const none = buildStickerPrompt(character, reaction, catalog.styles[0], { ...sampleCaption, mode: 'none' });
+  assert.doesNotMatch(none, /typography is added separately/i, 'none must not imply a mandatory later caption');
+});
+
+test('native multiline lettering keeps selected wording and supports all six style directions', () => {
+  for (const style of catalog.captionStyles ?? []) {
+    const caption = { ...sampleCaption, styleId: style.id, text: '看好了…\n哼哼！', position: 'top' as const };
+    const prompt = buildStickerPrompt(character, catalog.reactions[0], catalog.styles[0], caption);
+    assert.ok(prompt.includes(JSON.stringify(caption.text)));
+    assert.ok(prompt.includes(style.prompt), style.id);
+    assert.match(prompt, /top/i);
+    assert.match(prompt, /line break/i);
+  }
+  assert.equal(catalog.captionStyles?.length, 6);
+});
+
+test('native lettering translates the size control into approximate relative glyph height only', () => {
+  const make = (fontSize: number, mode: Caption['mode'] = 'generated') => buildStickerPrompt(character, catalog.reactions[0], catalog.styles[0], { ...sampleCaption, fontSize, mode });
+  const small = make(20), large = make(96);
+  assert.notEqual(small, large);
+  assert.match(small, /glyph height.*approximately 3\.9%.*canvas height/i);
+  assert.match(large, /glyph height.*approximately 18\.8%.*canvas height/i);
+  assert.match(large, /aesthetic.*reference.*not.*exact.*pixel/i);
+  assert.equal(make(20, 'none'), make(96, 'none'));
+  assert.equal(make(20, 'overlay'), make(96, 'overlay'));
+});
+
+test('meme personality guides acting and comedic reversal without changing the reference design or Niji sheet', () => {
+  const brief = '成年角色。爱逞强，喜欢小小挑衅；被反将一军时脸红嘴硬。亲近时偷偷递来甜点，却假装只是顺手。';
+  const customized = { ...character, outfit: 'open cardigan with a low curved neckline, detached sleeves and asymmetric legwear', memePersona: brief };
+  const prompt = buildStickerPrompt(customized, catalog.reactions[0], catalog.styles[0]);
+  assert.ok(prompt.includes(brief));
+  assert.match(prompt, /motivat.*speech rhythm.*comedic reversal/i);
+  assert.match(prompt, /personality brief.*behavior.*not.*(?:age|wardrobe)/i);
+  assert.match(prompt, /original character reference.*outfit authority/i);
+  assert.match(prompt, /preserve.*age.*body.*outfit/i);
+  assert.ok(prompt.includes(customized.outfit));
+  assert.equal(buildNijiPrompt(customized), buildNijiPrompt({ ...customized, memePersona: undefined }), 'the optional chat persona must not rewrite the character sheet');
+  assert.doesNotMatch(prompt, /mesugaki|loli|schoolgirl|seduct|erotic/i);
+});
+
+test('persona starter retains the original sixty and mixes native words, editable words and wordless acting', () => {
+  const old = catalog.packs.find(item => item.id === 'all60')!;
+  const all = catalog.packs.find(item => item.id === 'all64');
+  const pack = catalog.packs.find(item => item.id === 'bratty12');
+  assert.ok(all);
+  assert.ok(pack);
+  assert.equal(old.reactionIds.length, 60);
+  assert.equal(all.reactionIds.length, 64);
+  const newIds = ['smug-challenge', 'caught-bluff', 'little-victory', 'quiet-softening'];
+  assert.deepEqual(all.reactionIds.filter(id => !old.reactionIds.includes(id)), newIds);
+  assert.equal(pack.reactionIds.length, 12);
+  assert.ok(newIds.every(id => pack.reactionIds.includes(id)));
+  assert.equal(pack.reactionIds.filter(id => old.reactionIds.includes(id)).length, 8);
+  const selected = pack.reactionIds.map(id => catalog.reactions.find(item => item.id === id)!);
+  assert.deepEqual(new Set(selected.map(item => item.textMode)), new Set(['none', 'overlay', 'generated']));
+  assert.ok(new Set(selected.map(item => item.compositionId)).size >= 5);
+  assert.ok(selected.some(item => item.intensity === 1));
+  assert.ok(selected.some(item => item.intensity === 3));
+  assert.ok(catalog.personas.length >= 3);
+  for (const preset of catalog.personas) {
+    assert.ok(preset.brief.length > 40 && preset.brief.length <= 1200, preset.id);
+    assert.doesNotMatch(preset.brief, /mesugaki|loli|schoolgirl|seduct|erotic|雌小鬼|未成年/i);
+  }
 });

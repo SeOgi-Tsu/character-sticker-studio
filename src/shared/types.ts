@@ -2,8 +2,13 @@ export interface Character {
   name: string; description: string; identity: string; outfit: string; personality: string;
   referenceAssetId?: string; anchorAssetId?: string;
   outfitMode?: 'reference' | 'custom';
+  memePersona?: string;
 }
-export interface Caption { text: string; enabled: boolean; color: string; stroke: string; position: 'top' | 'bottom'; fontSize: number; }
+export type TextMode = 'none' | 'overlay' | 'generated';
+export type CaptionStyleId = 'classic' | 'round' | 'handwritten' | 'brush' | 'bubble' | 'comic';
+export interface Caption { text: string; enabled: boolean; color: string; stroke: string; position: 'top' | 'bottom' | 'left' | 'right'; fontSize: number; mode?: TextMode; styleId?: CaptionStyleId; rotation?: number; }
+export interface CaptionStyle { id: CaptionStyleId; name: string; description: string; fontFamily: string; fontFile?: string; prompt: string; }
+export interface PersonaPreset { id: string; name: string; description: string; brief: string; }
 export type CompositionId = 'closeup' | 'halfbody' | 'fullbody' | 'action' | 'prop' | 'scene' | 'peek';
 export interface Composition { id: CompositionId; name: string; description: string; prompt: string; }
 export type InteractionId = 'observe' | 'approach' | 'offer' | 'touch' | 'squish' | 'comic';
@@ -14,6 +19,7 @@ export interface Reaction {
   tags: string[]; emoji: string; recommended?: boolean; sourceIds?: string[];
   compositionId?: CompositionId;
   interactionId?: InteractionId; intensity?: Intensity; intent?: string;
+  textMode?: TextMode; captionStyleId?: CaptionStyleId;
 }
 export interface Style { id: string; name: string; description: string; prompt: string; color: string; }
 export interface Pack { id: string; name: string; description: string; reactionIds: string[]; }
@@ -30,6 +36,7 @@ export interface Job {
   reactionId?: string; name: string; prompt: string; status: JobStatus;
   asset?: Asset; error?: string; createdAt: string; updatedAt: string; model: string; provider: string;
   remoteTaskId?: string;
+  textMode?: TextMode; generatedText?: string;
 }
 export interface RunningHubNode { nodeId: string; fieldName: string; fieldValue?: string; }
 export interface RunningHubSettings {
@@ -42,7 +49,7 @@ export interface ProviderSettings {
   hasApiKey?: boolean; size: string; concurrency: number;
   runninghub?: RunningHubSettings;
 }
-export interface Catalog { reactions: Reaction[]; styles: Style[]; packs: Pack[]; sources: Source[]; compositions: Composition[]; interactions: Interaction[]; }
+export interface Catalog { reactions: Reaction[]; styles: Style[]; packs: Pack[]; sources: Source[]; compositions: Composition[]; interactions: Interaction[]; captionStyles: CaptionStyle[]; personas: PersonaPreset[]; }
 export interface Bootstrap {
   projects: Project[]; catalog: Catalog; settings: ProviderSettings;
   assets: Asset[]; jobs: Job[];

@@ -33,6 +33,14 @@ export default function CharacterView({ project, assets, jobs, catalog, onChange
           <Field label="服装依据" hint={customOutfit ? '按下方文字主动换装；外貌特征继续沿用角色参考图。' : '原始角色图决定服装结构，Q 版母版只定脸型与画风；保留领口和开衫开合。没有原图时使用文字设定。'}><select value={character.outfitMode ?? 'reference'} onChange={e => patch({ outfitMode: e.target.value as Character['outfitMode'] })}><option value="reference">沿用原图服装（默认）</option><option value="custom">按文字换装</option></select></Field>
           <Field label={customOutfit ? '换装描述与配件' : '服饰与配件'}><textarea rows={2} value={character.outfit} onChange={e => patch({ outfit: e.target.value })} placeholder={customOutfit ? '描述想更换的衣服、领口、穿法与配件' : '补充原图中的领口、开衫穿法与标志配件'} /></Field>
           <Field label="性格与语气"><textarea rows={2} value={character.personality} onChange={e => patch({ personality: e.target.value })} placeholder="软乎乎 / 嘴硬心软 / 一本正经地搞怪" /></Field>
+          <section className="persona-panel" aria-label="角色表情人格">
+            <div className="panel-heading"><span className="eyebrow">HER OWN LITTLE HUMOR</span><Sparkles size={16} /></div>
+            <h3>让笑点，也像她本人</h3>
+            <p>写下她怎么逗人、想赢什么，以及嘴硬被识破时的小反应。</p>
+            {(catalog.personas || []).length > 0 && <div className="persona-presets" role="group" aria-label="表情人格预设">{catalog.personas.map(persona => <button type="button" key={persona.id} className={character.memePersona === persona.brief ? 'active' : ''} aria-pressed={character.memePersona === persona.brief} title={persona.description} onClick={() => patch({ memePersona: persona.brief })}>{persona.name}<small>{persona.description}</small></button>)}</div>}
+            <Field label="表情人格简要" hint="预设会填入下方文字，可继续改写；只影响表演与笑点，服装仍按上面的设定。"><textarea aria-label="表情人格简要" rows={5} maxLength={1200} value={character.memePersona || ''} onChange={e => patch({ memePersona: e.target.value })} placeholder="例如：爱逗人、好胜又嘴硬的成年角色。得意时先歪头挑眉；一被夸奖就慌张转开视线，却悄悄靠近。台词短，偶尔用很小声的补充暴露心软。" /></Field>
+            <div className="persona-counter">{(character.memePersona || '').length} / 1200 · 下次生成时生效</div>
+          </section>
           <div className="split-actions"><button className="button primary" disabled={busy || !character.name.trim()} onClick={() => onGenerate('character')}><WandSparkles size={16} />云端生成角色图</button><button className="button secondary" onClick={onNiji}>Niji 7 工坊 <ArrowRight size={16} /></button></div>
         </>}
       </section>

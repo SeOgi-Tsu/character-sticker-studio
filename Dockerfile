@@ -13,6 +13,7 @@ RUN npm ci --omit=dev --no-audit --no-fund && mkdir -p /app/data && chown node:n
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/server ./server
 COPY --from=build --chown=node:node /app/src/shared ./src/shared
+COPY --from=build --chown=node:node /app/public ./public
 USER node
 ENV HOST=0.0.0.0 PORT=4317 DATA_DIR=/app/data NODE_ENV=production
 EXPOSE 4317

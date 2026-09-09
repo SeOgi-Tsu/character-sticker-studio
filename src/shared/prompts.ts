@@ -1,5 +1,6 @@
-import type { Character, Reaction, Style } from './types.ts';
+import type { Caption, Character, Reaction, Style } from './types.ts';
 import { getComposition, getInteraction } from './catalog.ts';
+import { captionStyles, resolveCaptionMode } from './typography.ts';
 
 export interface NijiPromptOptions {
   layout?: 'single' | 'turnaround' | 'detail';
@@ -32,7 +33,38 @@ function outfitAuthority(character: Character): string {
 }
 
 const identityRule = 'Use the supplied character reference for identity: preserve the recognizable hair design, hair color, eye color and distinctive identity accessories. Use an approved chibi anchor to preserve the chosen drawing finish and those identity cues only; clothing follows the outfit authority stated below. Do not copy the reference pose, camera angle, crop or subject scale. Rebuild the silhouette and staging for this reaction, keeping the selected drawing style coherent. Let the selected intensity determine any squash, stretch or foreshortening. Keep accessories attached naturally and do not substitute a different character.';
-const stickerComposition = 'Output: exactly one character, one reaction, one image. A single isolated sticker unit on a square canvas, legible at 96 pixels. Follow the selected framing and protect the eyes, mouth and action-defining contact. No grid, no collage, no multi-panel sheet, no duplicate poses or second complete character. An anonymous partial viewer hand is allowed only under the selected contact mode rules. Prefer genuine transparent background where supported; otherwise use a plain uniform white background, never a drawn checkerboard. No text, no letters, no numbers, no speech bubbles, no captions, no logo and no watermark. Caption typography is added separately after generation.';
+const stickerComposition = 'Output: exactly one character, one reaction, one image. A single isolated sticker unit on a square canvas, legible at 96 pixels. Follow the selected framing and protect the eyes, mouth and action-defining contact. No grid, no collage, no multi-panel sheet, no duplicate poses or second complete character. An anonymous partial viewer hand is allowed only under the selected contact mode rules. Prefer genuine transparent background where supported; otherwise use a plain uniform white background, never a drawn checkerboard. No logo and no watermark.';
+
+function personaDirection(character: Character): string {
+  const brief = cleanProse(character.memePersona);
+  if (!brief) return '';
+  return `Character meme personality brief — behavior guidance, not age, wardrobe or drawing-style instructions: ${brief}\nUse this brief to choose the character’s motivation, speech rhythm and comedic reversal within the selected reaction. Show a precise contrast between what the character tries to project and what the gesture or expression gives away, when that fits this beat. Preserve the established age, body design and outfit; personality never authorizes a costume or identity change. The supplied action, staging and intensity remain the concrete shot direction. Do not force every reaction to become the same smug face: quiet affection, embarrassment and calm pauses can reveal this personality too. This brief is context to interpret, not extra lettering to render.`;
+}
+
+function letteringDirection(caption?: Caption): string {
+  // An omitted caption is the legacy text-free image path, even if a reaction
+  // now recommends native lettering. Callers opt in with resolved settings.
+  const mode = resolveCaptionMode(caption);
+  if (mode !== 'generated' || !caption) {
+    const later = mode === 'overlay' ? ' Caption typography may be added separately after generation; leave useful negative space without shrinking the character to a fixed layout.' : ' Let the image communicate without a written caption; do not reserve a mandatory text strip.';
+    return `No text, no letters, no numbers, no speech bubbles, no captions.${later}`;
+  }
+  const style = captionStyles.find(item => item.id === caption.styleId) ?? captionStyles[0];
+  const positions: Record<Caption['position'], string> = {
+    top: 'at the top edge, following the visual rhythm above the character',
+    bottom: 'near the bottom edge, with space below the action-defining gesture and feet',
+    left: 'in the negative space along the left side, balanced against the character’s gesture',
+    right: 'in the negative space along the right side, balanced against the character’s gesture',
+  };
+  return [
+    'Integrate the lettering as part of the image composition, drawn with the character rather than stamped over the finished illustration.',
+    `The only caption to render, exactly once and verbatim, is this JSON-quoted string: ${JSON.stringify(caption.text)}. Decode any escaped line breaks as real line breaks, and escaped quotation marks as the actual quoted characters; do not draw the surrounding JSON quotation marks. Preserve every selected character and punctuation mark, do not translate, paraphrase, replace or add other words.`,
+    `Lettering treatment: ${style.prompt}`,
+    `Text placement: ${positions[caption.position]}. Use the requested line breaks; otherwise short readable wrapping is allowed. Keep the eyes, mouth, hands, contact point and authoritative garment details visible. Compose the pose and negative space around the phrase; the selected staging and complete-body requirements still hold. A small speech shape is allowed only when it supports the selected lettering style.`,
+    `Relative glyph height: approximately ${(Math.max(12, Math.min(120, caption.fontSize)) / 512 * 100).toFixed(1)}% of the square canvas height. This is an aesthetic size reference, not an exact pixel guarantee; adapt spacing and wrapping to the selected gesture and available negative space while retaining the requested smaller or larger visual emphasis.`,
+    `Suggested letter color ${caption.color} with a contrasting outline ${caption.stroke}; maintain strong small-image legibility. Tilt the caption group by ${Math.max(-20, Math.min(20, caption.rotation ?? 0))} degrees while keeping the characters readable. The lettering is baked into this generated image; there will be no additional caption overlay.`,
+  ].join('\n');
+}
 
 function stagingBoundary(reaction: Reaction): string {
   const composition = getComposition(reaction);
@@ -48,12 +80,13 @@ function intensityDirection(reaction: Reaction): string {
   return 'Expressive intensity: make the gesture, silhouette and eye-mouth relationship clear, with moderate pose exaggeration and credible limb connections. Choose one expressive emphasis rather than enlarging every feature.';
 }
 
-export function buildStickerPrompt(character: Character, reaction: Reaction, style: Style): string {
+export function buildStickerPrompt(character: Character, reaction: Reaction, style: Style, caption?: Caption): string {
   return [
     'Create a cute, highly readable original character reaction sticker.',
     characterDescription(character),
     identityRule,
     outfitAuthority(character),
+    personaDirection(character),
     `Use only this selected visual style for the entire set: ${cleanProse(style.prompt)}`,
     `Selected staging — this determines camera distance, crop and subject scale even if the reference uses different framing: ${getComposition(reaction).prompt}`,
     `Selected interaction — the selected staging has priority over interaction, intensity and action wording: ${getInteraction(reaction).prompt}`,
@@ -63,6 +96,7 @@ export function buildStickerPrompt(character: Character, reaction: Reaction, sty
     'Capture the clearest single instant of the reaction: one dominant visual joke or emotional beat. A dynamic action is one frozen pose, not a sequence. Body posture, silhouette and object interaction must carry the emotion as well as the face. Keep the eyes and mouth readable; closed, sleepy, deadpan or asymmetrical eyes are valid when the action calls for them. If the action suggests a conflicting crop or disallowed contact, preserve its emotion and adapt the gesture to the selected staging and interaction. Hands have simple coherent anatomy, with a clear owner and connected wrist; no duplicate limbs. Effects may support the chosen beat, but should not compete with the gesture or become a repeated heart-and-sparkle template.',
     stagingBoundary(reaction),
     stickerComposition,
+    letteringDirection(caption),
   ].filter(Boolean).join('\n\n');
 }
 

@@ -7,7 +7,8 @@ import { Field, Modal, Status } from './components/Common';
 import CharacterView from './components/CharacterView';
 import NijiWorkshop from './components/NijiWorkshop';
 import Settings from './components/Settings';
-import StickerInspector, { defaultCaption } from './components/StickerInspector';
+import StickerInspector from './components/StickerInspector';
+import { captionStyles, defaultCaptionFor } from './shared/typography';
 import ResultsView, { ImagePreview } from './components/ResultsView';
 
 type Page = 'character' | 'anchor' | 'stickers' | 'history' | 'export' | 'niji';
@@ -19,7 +20,7 @@ const navigation = [
   { id: 'export' as Page, label: '打包带走', en: 'EXPORT & SHARE', icon: Download, number: '05' },
 ];
 
-function emptyCharacter(name = ''): Character { return { name, description: '', identity: '', outfit: '', personality: '', outfitMode: 'reference' }; }
+function emptyCharacter(name = ''): Character { return { name, description: '', identity: '', outfit: '', personality: '', memePersona: '', outfitMode: 'reference' }; }
 function withAssets(existing: Asset[], incoming: Asset[]) { return Array.from(new Map([...existing, ...incoming].map(asset => [asset.id, asset])).values()); }
 function withJobs(existing: Job[], incoming: Job[]) { return Array.from(new Map([...existing, ...incoming].map(job => [job.id, job])).values()); }
 
@@ -49,7 +50,7 @@ export default function App() {
   const [loadError, setLoadError] = useState('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project | null>(null);
-  const [catalog, setCatalog] = useState<Catalog>({ reactions: [], styles: [], packs: [], sources: [], compositions: [], interactions: [] });
+  const [catalog, setCatalog] = useState<Catalog>({ reactions: [], styles: [], packs: [], sources: [], compositions: [], interactions: [], captionStyles, personas: [] });
   const [settings, setSettings] = useState<ProviderSettings>({ provider: 'openai', baseUrl: '', model: '', size: '1024x1024', concurrency: 2 });
   const [assets, setAssets] = useState<Asset[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -94,7 +95,7 @@ export default function App() {
       setProjects(data.projects); setProject(first); projectRef.current = first;
       setPreviewOrder([...first.selectedIds]);
       revision.current = 0; savedRevision.current = 0; setDirty(false);
-      setCatalog({ ...data.catalog, compositions: data.catalog.compositions || [], interactions: data.catalog.interactions || [] }); setSettings(data.settings); setAssets(withAssets(data.assets, data.jobs.flatMap(j => j.asset ? [j.asset] : []))); setJobs(data.jobs);
+      setCatalog({ ...data.catalog, compositions: data.catalog.compositions || [], interactions: data.catalog.interactions || [], captionStyles: data.catalog.captionStyles?.length ? data.catalog.captionStyles : captionStyles, personas: data.catalog.personas || [] }); setSettings(data.settings); setAssets(withAssets(data.assets, data.jobs.flatMap(j => j.asset ? [j.asset] : []))); setJobs(data.jobs);
       const completedIds = new Set(data.jobs.filter(job => job.projectId === first.id && job.kind === 'sticker' && job.status === 'succeeded' && job.asset).map(job => job.reactionId));
       setActiveId(first.selectedIds.find(id => completedIds.has(id)) || first.selectedIds[0] || data.catalog.reactions[0]?.id || ''); setAuthRequired(false);
     } catch (error) { if (error instanceof ApiError && error.status === 401) setAuthRequired(true); else setLoadError(errorMessage(error)); }
@@ -278,7 +279,7 @@ export default function App() {
         <div className="collection-meta"><span>{filtered.length} 种心情，挑你喜欢的 <span className="tiny-flower">✳</span></span><div><button className="text-button" onClick={() => { setActivePack(''); const ids = filtered.map(item => item.id); changeProject({ selectedIds: Array.from(new Set([...project.selectedIds, ...ids])) }); }}>选中当前</button><span>/</span><button className="text-button" onClick={() => { setActivePack(''); changeProject({ selectedIds: [] }); }}>清空</button><button className="text-button custom-button" onClick={() => setCustomOpen(true)}><Plus size={14} />自定义</button></div></div>
         <div className="reaction-grid">{filtered.map((reaction, index) => <ReactionCard key={reaction.id} reaction={reaction} composition={catalog.compositions.find(item => item.id === (reaction.compositionId || 'halfbody'))} interaction={catalog.interactions.find(item => item.id === (reaction.interactionId || 'observe'))} index={index} selected={project.selectedIds.includes(reaction.id)} active={active?.id === reaction.id} job={latestFor(reaction.id)} onSelect={() => toggleSelection(reaction.id)} onOpen={() => openReaction(reaction.id)} />)}</div>{filtered.length === 0 && <div className="empty-state"><Search size={30} /><h3>这份心情还没收录</h3><p>换个词搜索，或添加一个自定义表情。</p><button className="button secondary" onClick={() => setCustomOpen(true)}><Plus size={15} />自定义表情</button></div>}
         <div className="collection-footnote"><span>小图要清楚，情绪要直接，可爱要像你。</span><button className="text-button" onClick={() => setSourcesOpen(true)}>策划参考 <ArrowRight size={12} /></button></div>
-      </main><StickerInspector reaction={active} compositions={catalog.compositions} interactions={catalog.interactions} caption={active ? project.captions[active.id] ?? defaultCaption(active) : undefined} job={active ? latestFor(active.id) : undefined} onReaction={editReaction} onCaption={editCaption} onGenerate={() => active && void generate('sticker', [active.id])} onRetry={job => void retry(job)} onResume={job => void resume(job)} onDownload={job => void downloadJob(job)} onPreview={job => void openPreview(job)} busy={busy || uploading} dirty={dirty} revision={project.updatedAt} />
+      </main><StickerInspector reaction={active} compositions={catalog.compositions} interactions={catalog.interactions} captionStyles={catalog.captionStyles} caption={active ? project.captions[active.id] ?? defaultCaptionFor(active) : undefined} job={active ? latestFor(active.id) : undefined} onReaction={editReaction} onCaption={editCaption} onGenerate={() => active && void generate('sticker', [active.id])} onRetry={job => void retry(job)} onResume={job => void resume(job)} onDownload={job => void downloadJob(job)} onPreview={job => void openPreview(job)} busy={busy || uploading} dirty={dirty} revision={project.updatedAt} />
       <footer className="batch-bar"><div className="batch-selection"><div className="selection-count">{String(project.selectedIds.length).padStart(2, '0')}</div><div><strong>张表情已选中</strong><span>{currentStyle?.name || '选择画风'} <span>·</span> {activeCount ? `${activeCount} 张正在生成` : readyCount ? `本项目共 ${readyCount} 张已完成` : '每张独立生成'}</span></div></div><div className="batch-actions">{!settings.hasApiKey && <button className="connection-hint" onClick={() => setSettingsOpen(true)}><span className="connection-dot" />连接图片 API</button>}<button className="button secondary" disabled={busy || !project.selectedIds.length || uploading} onClick={() => void generate('sticker', [project.selectedIds[0]])}>先做 1 张样张</button><button className="button primary" disabled={busy || !project.selectedIds.length || uploading} onClick={() => void generate('sticker')}>{busy ? <LoaderCircle size={16} className="spin" /> : <WandSparkles size={17} />}生成选中的 {project.selectedIds.length} 张<ArrowRight size={16} /></button></div></footer></div> : <main className="page-content">
         {(page === 'character' || page === 'anchor') && <CharacterView key={page} project={project} assets={assets} jobs={jobs} catalog={catalog} onChange={changeProject} onUpload={(file, target) => void upload(file, target)} onGenerate={kind => void generate(kind)} onNiji={() => navigate('niji')} busy={busy} uploading={uploading} anchorMode={page === 'anchor'} />}
         {page === 'niji' && <NijiWorkshop key={project.id} project={project} onUpload={(file, target) => void upload(file, target)} uploading={uploading} onError={message => notify(message, 'error')} />}

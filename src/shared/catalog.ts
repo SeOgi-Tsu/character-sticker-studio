@@ -1,4 +1,5 @@
-import type { Catalog, Composition, CompositionId, Interaction, Reaction } from './types.ts';
+import type { Catalog, Composition, CompositionId, Interaction, PersonaPreset, Reaction } from './types.ts';
+import { captionStyles } from './typography.ts';
 
 export const compositions: Composition[] = [
   { id: 'closeup', name: '贴脸特写', description: '让脸颊、眼神或触碰点成为主角；可贴边、轻微变形，关键特征仍清楚。', prompt: 'Close-up framing: the face and action-defining gesture occupy about 80–92% of the canvas, with only a little shoulder visible. Choose eye-level or a slight high/low camera angle that makes this emotion readable. Preserve recognizable identity details; the shoulders and trailing hair may deliberately run beyond an edge, but protect the eyes, mouth and contact point. This is the selected close-up, not the default for other stickers.' },
@@ -42,6 +43,8 @@ const reactionCompositions: Record<string, CompositionId> = {
   'instant-pancake': 'action', 'heart-window': 'closeup',
   'viewer-offer': 'fullbody', 'tiptoe-wave': 'fullbody',
   'tiny-confident': 'fullbody', 'thoughtful-sulk': 'halfbody',
+  'smug-challenge': 'halfbody', 'caught-bluff': 'fullbody',
+  'little-victory': 'action', 'quiet-softening': 'prop',
 };
 
 // Older projects have no staging field. Resolve their stable reaction IDs to
@@ -171,14 +174,54 @@ const bodyInteractionReactions: Reaction[] = [
   },
 ];
 
+const personaReactions: Reaction[] = [
+  {
+    ...reaction('smug-challenge', '小小挑衅一下', '就这？', '嘴硬小剧场', '😏', 'Lean the torso toward the viewer while keeping one hand confidently at the waist, extend the other hand palm-up in a tiny bring-it-on gesture with a connected bent elbow. Lift just one eyebrow, lower the eyelids and curl one corner of the mouth into a deliberately self-satisfied grin. The joke is the very grand challenge delivered by someone with a very compact, almost overbalanced stance; keep the eyes attentive to the viewer rather than angry.', ['半身挑衅', '得意过头', '等你接招'], ['whale-static-2026'], true),
+    interactionId: 'approach', intensity: 3, intent: '想让对方回一句“你等着”，得意得有点欠，身体前倾和反手邀战带出亲近的打趣。', textMode: 'generated', captionStyleId: 'comic',
+  },
+  {
+    ...reaction('caught-bluff', '刚放完狠话就破功', '才、才没有！', '嘴硬小剧场', '😳', 'Freeze after a boast with both feet awkwardly planted apart and the torso suddenly leaning back, one hand still stubbornly at the waist while the other palm rises to deny what just happened. Turn the blushing face aside but dart the eyes back toward the viewer, raise one eyebrow too high and make a small wavering mouth. Hold one tiny sweat drop near the temple. The emotional reversal is obvious: the pose is still trying to look confident while the face has already given the bluff away.', ['全身嘴硬', '被戳穿', '反差破功'], ['whale-static-2026'], true),
+    interactionId: 'comic', intensity: 3, intent: '对方一句话就戳穿了逞强，嘴上否认、眼神露馅；让人想笑着再逗一句。', textMode: 'generated', captionStyleId: 'handwritten',
+  },
+  {
+    ...reaction('little-victory', '赢一点就要炫耀', '哼哼，拿下！', '嘴硬小剧场', '🏆', 'Hop with both feet barely off the ground, tuck the knees unevenly and swing one bent arm overhead in a tiny triumphant fist while the other hand rests grandly at the waist. Throw the chin up with closed satisfied eyes and a restrained smug smile. Let the swinging hair and one short landing mark support the little hop. The comedy is celebrating a very small success as if it were an enormous victory; use no trophy or podium.', ['全身小跳', '小事大赢', '得意'], [], true),
+    interactionId: 'comic', intensity: 2, intent: '只赢了一点点也要得意给你看；短促的小跳和仰头笑形成轻松好接的炫耀。', textMode: 'overlay', captionStyleId: 'bubble',
+  },
+  {
+    ...reaction('quiet-softening', '才不是特地留给你的', '顺手给你', '嘴硬小剧场', '🍰', 'Turn the torso slightly away as if trying to seem unconcerned, then extend a small plate holding one simple slice of cake toward the viewer with one connected hand. Rest the other hand near the waist, angle the face away and let the eyes glance quietly back at the recipient. Keep the lips in a tiny nearly-hidden smile with a faint cheek blush and relaxed shoulders. The gentle contradiction is a carefully offered treat delivered while pretending it is no big deal; the cake stays below the face and never hides the neckline.', ['无字关心', '嘴硬心软', '递甜点'], [], true),
+    interactionId: 'offer', intensity: 1, intent: '明明是特地留的，却侧过脸装作顺手；不用解释也看得出藏起来的关心。', textMode: 'none', captionStyleId: 'handwritten',
+  },
+];
+
+export const personas: PersonaPreset[] = [
+  { id: 'adult-bratty', name: '嘴硬小恶魔', description: '爱挑衅、爱炫耀，被反将一军就破功；亲近时悄悄心软。', brief: '成年角色。核心动机是想被在意、想赢一点点，又不愿直接承认。平时爱逞强、轻轻挑衅和炫耀，语气短促，自信得有点欠；被对方接招或戳穿时，会先僵住、移开视线，再红着脸嘴硬。喜剧反差是身体还在摆胜利姿势，表情已经露馅。对熟悉的人会偷偷照顾、递甜点、护短，却装作顺手。互动亲近好玩，避免伤人的贬低；安静时也允许直接关心。' },
+  { id: 'warm-soft', name: '软乎乎的认真派', description: '认真照顾你，努力过头的小失误也很可爱。', brief: '成年角色。核心动机是让对方安心、被好好照顾；表达温暖直接，短句柔和，喜欢确认对方有没有接住好意。动作认真而略笨拙，常常双手捧物、努力踮脚、伸手等回应。喜剧反差是为一件小事准备得过分周到，最后自己先累成一小团；失败会短暂停顿，再诚恳重来。可以害羞但不总是泪汪汪，沉默陪伴和轻轻点头同样成立。' },
+  { id: 'dry-deadpan', name: '淡定吐槽役', description: '脸上已经下班，身体却还在很认真地犯傻。', brief: '成年角色。核心动机是省点力气、保持从容，但看到朋友需要帮忙仍会出手。话少、停顿准确，语气平静，常用一句短评接住荒诞局面。喜剧反差是半睁的眼和毫无波澜的嘴，配上非常努力、尴尬或离谱的身体姿势；先保持两秒镇定，再轻轻塌下来。用眼神、侧身和道具关系讲笑点，避免每次都换成怒吼或巨大闪亮眼睛。' },
+];
+
+// Recommendations only: saved per-image caption settings always take priority.
+const textRecommendations: Record<string, Pick<Reaction, 'textMode' | 'captionStyleId'>> = {
+  'thoughtful-sulk': { textMode: 'overlay', captionStyleId: 'handwritten' },
+  'tiny-confident': { textMode: 'generated', captionStyleId: 'comic' },
+  'cheek-pinch': { textMode: 'none', captionStyleId: 'round' },
+  'receive-headpat': { textMode: 'none', captionStyleId: 'round' },
+  blanket: { textMode: 'none', captionStyleId: 'handwritten' },
+  deadpan: { textMode: 'generated', captionStyleId: 'brush' },
+  rolling: { textMode: 'overlay', captionStyleId: 'handwritten' },
+  'flower-delivery': { textMode: 'overlay', captionStyleId: 'round' },
+};
+
 const originalReactions = [...cute, ...chaos, ...daily, ...companion];
 const previousReactions = [...originalReactions, ...interactionReactions];
-const reactions = [...previousReactions, ...bodyInteractionReactions];
+const v4Reactions = [...previousReactions, ...bodyInteractionReactions];
+const reactions = [...v4Reactions, ...personaReactions].map(item => ({ ...item, ...textRecommendations[item.id] }));
 
 export const catalog: Catalog = {
   reactions,
   compositions,
   interactions,
+  captionStyles,
+  personas,
   styles: [
     { id: 'cream-chibi', name: '奶油精致 Q 版', description: '软软圆脸、细腻眼睛、干净赛璐璐。想可爱，也想一眼认出是你。', color: '#F6D9AB', prompt: 'Refined 2D anime chibi illustration, roughly two-head-tall base design with pose-driven squash and stretch, soft round cheeks, expressive detailed eyes, clean chocolate-brown linework, restrained crisp cel shading, warm cream highlights and soft peach blush. Retain the character’s exact hair, eye and outfit colors; cream is a lighting accent, not a recoloring instruction. Consistent drawing finish across varied body silhouettes, polished compact sticker finish.' },
     { id: 'cheeky-bighead', name: '欠欠大头反应', description: '大脑袋、小短腿、表情放大；全身也能很欠很可爱。', color: '#F3B6BE', prompt: 'Playful 2D big-head reaction sticker, roughly one-and-a-half-head-tall base design with expressive squash and stretch, oversized wide rounded face, tiny compact torso and mitten-like hands, bold clean dark outline, simple flat cel colors, exaggerated brows and mouth, expressive eyes preserving their original color. Soft coral blush as a small accent, mischievous comic timing, original character design. Big-head describes anatomy, not a mandatory close-up camera; framing follows the selected staging.' },
@@ -187,13 +230,15 @@ export const catalog: Catalog = {
   packs: [
     { id: 'interaction12', name: '可爱犯规 12', description: '扑抱、摸头、递大花、软脸和理直气壮的小小一只；强互动穿插安静陪伴，7 种构图。原创编辑精选，非使用量排名。', reactionIds: ['hug-lunge', 'receive-headpat', 'flower-delivery', 'corner-check', 'cheek-pinch', 'tiny-boss', 'instant-pancake', 'heart-window', 'waao', 'rolling', 'blanket', 'thanks'] },
     { id: 'body-interaction12', name: '全身半身互动 12', description: '6 张全身＋6 张半身：踮脚找你、认真递茶、小个子护短和嘴硬思考，让双臂与身体一起传情。原创编辑精选，非热度排名。', reactionIds: ['viewer-offer', 'tiptoe-wave', 'tiny-confident', 'thoughtful-sulk', 'tiny-boss', 'waiting', 'thanks', 'hug-lunge', 'receive-headpat', 'head-tilt', 'shy', 'smug'] },
+    { id: 'bratty12', name: '嘴硬小剧场 12', description: '挑衅→破功→小小得意→偷偷心软；4 张原生字、4 张后期字、4 张无字，混搭全身半身与道具。配合性格简要，演出你自己的角色。原创编辑精选。', reactionIds: ['smug-challenge', 'caught-bluff', 'little-victory', 'quiet-softening', 'thoughtful-sulk', 'tiny-confident', 'cheek-pinch', 'receive-headpat', 'blanket', 'deadpan', 'rolling', 'flower-delivery'] },
     { id: 'mixed12', name: '百变可爱 12', description: '从贴脸到全身，从跑跳到被窝：7 种构图交错，先试这套。编辑精选，非热度排名。', reactionIds: ['waao', 'hug', 'running', 'peek', 'flower', 'low-battery', 'desk-bang', 'blanket', 'victory', 'rolling', 'puffed-cheeks', 'busy'] },
     { id: 'cute12', name: '贴脸可爱 12', description: '偏好大头和软萌互动时选这套，也穿插半身、跪坐和道具。不是使用量排行榜。', reactionIds: cute.map(item => item.id) },
     { id: 'chaos12', name: '群聊发疯 12', description: '眼神死、假哭、拍桌、蠕动；一眼能接住情绪的反应精选。', reactionIds: chaos.map(item => item.id) },
     { id: 'daily24', name: '日常好用 24', description: '在可爱和群聊反应里加入收到、谢谢、干饭、没电；编辑按聊天场景配齐。', reactionIds: ['waao', 'head-tilt', 'peek', 'puffed-cheeks', 'cling', 'hug', 'puppy-eyes', 'flower', 'deadpan', 'fake-cry', 'stunned', 'cant-stop-laughing', ...daily.map(item => item.id)] },
     { id: 'all48', name: '经典反应库 48', description: '保留原有四类和完整配方；每张仍可修改构图、互动与文案。', reactionIds: originalReactions.map(item => item.id) },
     { id: 'all56', name: '全部反应 56', description: '经典 48 张加上 8 张互动新作；自由组合强反应、幽默和安静可爱。建议先试少量。', reactionIds: previousReactions.map(item => item.id) },
-    { id: 'all60', name: '全部反应 60', description: '保留前 56 张，再加 4 张半身与全身互动。每张都可自由修改构图、张力和文案。', reactionIds: reactions.map(item => item.id) },
+    { id: 'all60', name: '全部反应 60', description: '保留前 56 张，再加 4 张半身与全身互动。每张都可自由修改构图、张力和文案。', reactionIds: v4Reactions.map(item => item.id) },
+    { id: 'all64', name: '全部反应 64', description: '保留前 60 张，加上挑衅、露馅、小小得意与安静心软；文字路径可逐张调整，角色性格简要也可自由编辑。', reactionIds: reactions.map(item => item.id) },
   ],
   sources: [
     { id: 'whale-static-2026', title: '2026 小鲸鱼 / DeepSeek 社区静态图案例', url: 'https://www.vgover.com/news/227900', checkedAt: '2026-09-09', evidence: '页面标注 2026-07-31；本次实际查看其中 5 张 JPEG 静态图，包括前景指向角色的手、仰脸叉腰的理直气壮反应、放大伸手与斜头半身，以及同一角色切换主客关系。提炼接触因果、近大远小和预期反转，不复制角色、画面或文字。摸头、软脸等新作是原创设计延伸；这些案例不能证明最高传播量或 QQ 使用排名。' },
