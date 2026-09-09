@@ -1,122 +1,178 @@
-# Shared contract (frontend/backend/content) · v0.9.0
+# API 与数据契约
 
-V0.9 defaults single-image and ZIP exports to `size=original` (also the omitted-size default). Original mode preserves each source width/height without padding or resampling, including rectangular images. Inactive/embedded-text rendering returns the stored PNG bytes. Numeric 128/256/512/1024 remain explicit legacy options. Original ZIPs omit `resized/`; export metadata records `export:{size,originalResolution}` and source `width/height` per result.
+本页描述当前实现。共享字段以 [types.ts](../src/shared/types.ts) 为准，校验和状态转换以 [server/app.ts](../server/app.ts) 为准。开发与部署见 [DEVELOPMENT.md](DEVELOPMENT.md)、[DEPLOYMENT.md](DEPLOYMENT.md)。
 
-V0.8 is a catalog-only addition: 76 reactions, optional `playful6` and `all76` packs. The original `all70` still contains exactly 70 reactions and the default starter pack is unchanged. No request/response schema or provider protocol changed.
+## 请求、鉴权与错误
 
-V0.2 adds per-reaction `compositionId`, `catalog.compositions`, RunningHub provider settings and `POST /api/jobs/:id/resume`. See [V2_CONTRACT.md](V2_CONTRACT.md) for the exact additions. Known RunningHub remote tasks resume querying on restart; other ambiguous submissions remain unknown. All original endpoints remain compatible.
+请求体使用 JSON；响应通常为 JSON，图片和整包导出分别为 PNG、ZIP。错误响应为 `{ "error": "可读说明" }`。
 
-V0.3 adds `catalog.interactions` and optional Reaction/override fields `interactionId` (observe/approach/offer/touch/squish/comic), `intensity` (integer 1..3), and `intent` (string, max160 UTF-16 code units). These survive project save and recipe import/export. Missing fields preserve old recipe compatibility; prompt defaults are observe/2/no intent. Existing provider requests and settings are unchanged. See [V3_INTERACTION_PLAN.md](V3_INTERACTION_PLAN.md).
-
-V0.4 adds `Character.outfitMode` (reference/custom, default reference), ordered original + secondary chibi reference transport, and optional `RunningHubSettings.styleReferenceNode`. In reference mode new sticker jobs prioritize the original garment source; custom mode permits text-led redesign. See [V4_WARDROBE_CONTRACT.md](V4_WARDROBE_CONTRACT.md); old single-reference jobs remain compatible.
-
-V0.5.0 adds three per-image text modes, six caption styles, three bundled OFL Chinese fonts, an editable meme-personality brief and four new reactions (64 total). Existing cloud API and RunningHub transport/settings stay unchanged. See [V5_TEXT_PERSONA_CONTRACT.md](V5_TEXT_PERSONA_CONTRACT.md) and [TYPOGRAPHY_BACKEND.md](TYPOGRAPHY_BACKEND.md).
-
-V0.6.0 adds optional per-character signature motifs and per-reaction single-image mini-scenes, six new reactions (70 total), and pack `mini-theater12` (角色小剧场 12). Original 64 reaction IDs, their packs, reference-outfit rules and Niji generation/import flow remain available. Default selections are not automatically enlarged. See [V6_MINI_SCENE_CONTRACT.md](V6_MINI_SCENE_CONTRACT.md).
-
-V0.7.0 adds first-use routing, clean project creation through the existing API, current-project restoration and clearer character/anchor candidate navigation. It adds no backend endpoints or provider changes. See [V7_ONBOARDING_CONTRACT.md](V7_ONBOARDING_CONTRACT.md).
-
-Shared TS types: `src/shared/types.ts`. Content exports `catalog` from `src/shared/catalog.ts` and `buildStickerPrompt(character, reaction, style, caption?)`, `buildAnchorPrompt(character, style)`, `buildCharacterPrompt(character)`, `buildNijiPrompt(character, options?)` from `src/shared/prompts.ts`. Niji options: `{layout?: 'single'|'turnaround'|'detail', stylize?: number, raw?: boolean, styleReference?: string}`. All return string. Omitting the optional sticker caption preserves a text-free generation prompt; the jobs API resolves the project's caption or reaction recommendation before calling this function.
-
-## V0.7.0 frontend onboarding and candidate workflow
-
-`src/lib/onboarding.ts` exports `StartMode = 'existing' | 'scratch'` and `StartGuideInput = {mode, name, description}`. The guide collects a trimmed name of 1–80 UTF-16 code units and an optional description up to 2000. `newCharacterFromGuide(input)` creates a fresh character with only that name/description, empty identity/outfit/personality/memePersona/signatureMotifs, reference outfit mode and no asset IDs. The parent saves current edits and calls existing POST `/api/projects`; it never clones the current character or queues image generation through the guide.
-
-Route `existing` opens reference-upload instructions; `scratch` opens description and cloud/Niji choices. Back retains inputs. Skip or continue-current only dismisses the guide; they do not create a project. `StartGuide.onStart` returns `Promise<boolean>`: failed creation retains the form, displays the parent's optional `error` inside the modal and does not mark the guide seen. A successful start or an explicit dismissal marks it seen. A sidebar 使用指南 action can reopen it.
-
-Browser preferences use two origin-scoped `localStorage` keys:
-
-| Key | Value and behavior |
+| 状态 | 常见含义 |
 | --- | --- |
-| `character-sticker-studio:guide:v1` | `"1"` after dismissal or successful start. Missing/unreadable means show the first-use guide. |
-| `character-sticker-studio:active-project:v1` | Last selected/created project ID. On bootstrap, use it only if it is present in returned projects; otherwise use the first returned project. |
+| 400 | 字段、节点、图片或请求格式无效 |
+| 401 | 缺少访问口令或口令不正确 |
+| 403 | Host、Origin 或跨站请求被拒绝 |
+| 404 | 项目、任务、素材或接口不存在 |
+| 409 | 请求编号冲突、任务状态不允许操作、没有可导出的图片 |
+| 413 | 上传文件或 JSON 请求体过大 |
+| 500 | 服务端未分类错误，响应不回显内部异常详情 |
 
-Storage access, including reading `window.localStorage`, is guarded. Denied reads/writes do not block project creation, selection or dismissal; preferences may not survive reload, the guide may reappear and project selection falls back as above. Helpers `hasSeenGuide`, `markGuideSeen`, `readActiveProjectId`, `rememberActiveProjectId` accept optional storage mocks. These keys contain browser preferences, not API keys or project data.
+启用 STUDIO_TOKEN 后，除登录外的 /api/* 与 /assets-local/* 都需要鉴权。客户端可发送 Authorization: Bearer 访问口令，或 POST /api/login `{token}` 取得 studio_session Cookie。Cookie 使用 HttpOnly、SameSite=Strict，有效期七天；Secure 取决于服务端识别的请求协议。口令和供应商密钥不能放在 URL 中。
 
-After bootstrap/reload, the selected project's asset IDs determine its entry page: no `referenceAssetId` → character; reference but no `anchorAssetId` → anchor; both → stickers. CharacterView receives optional `entryMode`, `onNext`, `onHistory`, `onPreview`; choosing the next step saves current edits and checks the required selected reference/anchor. Candidate lists are scoped to project/kind, sorted newest first, show statuses and retain prior successful images when new ones are generated. Active jobs of the same kind disable repeated submission in this view. Niji remains manual external generation followed by import.
+Host 使用主机名白名单；Origin 必须同源或在允许列表内，Sec-Fetch-Site: cross-site 会被拒绝。该机制不是开放 CORS API。空数据库启动时创建通用空白初始项目，已有数据库不因启动而重置。
 
-`src/lib/character-workflow.ts` exports `applyProjectChange(current, change)`. The UI applies it to edits/uploads/candidate selection: changing `styleId` or `character.referenceAssetId` clears selected `anchorAssetId`; an unchanged reference or unrelated edit preserves it. Clearing selection does not delete assets or jobs. This is a shared frontend workflow rule, not a new server mutation or endpoint; direct API clients should apply the same invalidation when implementing equivalent reference changes.
+## 接口清单
 
-## V0.6.0 optional mini-scene fields
-
-| Field | Contract |
+| 方法与路径 | 输入 / 输出 |
 | --- | --- |
-| `Character.signatureMotifs?` | String, max 400 UTF-16 code units; recurring props/visual motifs for sticker generation only. Empty or omitted means no added direction. It must not override outfit, identity, body, age or reference priority. |
-| `Reaction.miniScene?` | Optional complete object `{enabled:boolean, setup:string, reveal:string, prop:string}`, also supported in custom reactions and overrides. If supplied, all four fields are required and validated. |
-| `miniScene.setup` | Max 240 UTF-16 code units: the situation implied by one still image. |
-| `miniScene.reveal` | Max 240 UTF-16 code units: the visible detail that reveals the joke or contradiction. |
-| `miniScene.prop` | Max 160 UTF-16 code units: one main prop or a small group of the same object. |
-| `Project.selectedIds`, explicit job `reactionIds` | Input array maximum 200; IDs must identify known reactions. This accommodates 70 built-ins plus up to 64 custom reactions without increasing the custom-reaction limit or auto-selecting more images. |
+| POST /api/login | `{token}` → `{ok:true}` 及会话 Cookie |
+| GET /api/health | `{ok:true}`；启用口令时也需要鉴权 |
+| GET /api/bootstrap | `{projects,catalog,settings,assets,jobs}` |
+| GET /api/settings | 安全供应商设置及 hasApiKey |
+| PUT /api/settings | 保存设置，返回去除密钥的设置 |
+| POST /api/projects | 项目可编辑字段 → 新 Project |
+| PUT /api/projects/:id | 项目可编辑字段 → 校验后的 Project |
+| GET /api/projects/:id/recipe | 可迁移项目配方 |
+| POST /api/projects/import | `{version:1,project,...}` → 新项目，移除外部素材 ID |
+| POST /api/assets | `{filename,dataUrl,provenance?}` → Asset |
+| GET /assets-local/:id.png | 保存后的原始 PNG |
+| POST /api/jobs | 创建生成任务 → `{jobs:Job[]}` |
+| GET /api/jobs?projectId=... | Job[]；省略项目参数返回全部任务 |
+| GET /api/jobs/:id | Job |
+| POST /api/jobs/import | 已有素材 → 成功的外部导入任务，不运行图片供应商 |
+| POST /api/jobs/:id/cancel | 停止排队或本地等待 → Job |
+| POST /api/jobs/:id/retry | `{requestId}` → 新 Job |
+| POST /api/jobs/:id/resume | 恢复已知 RunningHub 任务查询 → Job |
+| GET /api/jobs/:id/render?size=original&caption=1 | 按当前文字设置输出 PNG |
+| GET /api/projects/:id/export?size=original&captions=1 | 项目表情 ZIP |
 
-For example, a per-reaction override uses a complete object even when some text fields are blank:
+## 项目与反应字段
 
-```json
-{
-  "miniScene": {
-    "enabled": true,
-    "setup": "被发现偷吃，却装作没事。",
-    "reveal": "嘴边留下饼干屑，手里还藏着咬过一口的点心。",
-    "prop": "一块心形饼干"
-  }
-}
-```
+Project 包含 id、name、character、styleId、selectedIds、customReactions、overrides、captions、createdAt、updatedAt。ID 和时间由服务端管理，更新请求不能覆盖它们。
 
-Disable by writing the same object with `enabled:false`; retain `setup/reveal/prop` for later editing. Disabled, omitted or all-blank mini-scenes add no mini-scene prompt. These fields describe one frozen moment, not literal caption text or additional comic panels; no room background or typography is mandatory. Existing framing and viewer-hand interaction rules still govern. Text modes `none/overlay/generated` remain independent, including immutable native-lettering behavior below.
+顶层未提供字段沿用原值；提供的 character、overrides、captions 或 customReactions 会替换对应对象或数组，不执行深度合并。修改角色应提交完整角色对象，修改单张应保留映射中的其他条目。验证失败不写入项目。
 
-Project save and recipe roundtrips retain motifs and mini-scenes, including disabled content. Generation composes them into the frozen prompt, and retries keep that original prompt; editing affects only a new generation and does not alter existing image pixels. Invalid supplied mini-scene objects are rejected before saved project mutation.
+除 Caption.text 单独说明外，文字长度按 JavaScript UTF-16 code units 计算。
 
-Pack `mini-theater12` combines six new IDs (`cookie-alibi`, `gift-custodian`, `lid-deadlock`, `secret-standby`, `umbrella-bias`, `reserved-cushion`) with six existing reactions. `all70` contains the complete library; `all64` and older packs remain. Pack selection does not overwrite stored overrides or captions. The creative basis follows the user's corrected whale-image references and supplementary observations of an official VTuber sticker set; [V6_REFERENCE_NOTES.md](V6_REFERENCE_NOTES.md) distinguishes those observations from unsupported popularity rankings.
-
-## V0.5.0 text and persona fields
-
-| Field | Contract |
+| 字段 | 校验及语义 |
 | --- | --- |
-| `Character.memePersona?` | Editable string, max 1,200 UTF-16 code units. Describes motives, speech rhythm, habits and comedic reversal; it does not replace identity or outfit settings. |
-| `Caption.mode?` | `none`, `overlay` or `generated`. Existing `enabled:false` or explicit `mode:none` always resolves to `none`; old enabled captions without `mode` resolve to `overlay`. |
-| `Caption.styleId?` | `classic`, `round`, `handwritten`, `brush`, `bubble` or `comic`. An explicitly stored legacy caption without this field retains the classic renderer. |
-| `Caption.position` | `top`, `bottom`, `left` or `right`; default `bottom`. |
-| `Caption.rotation?` | Finite number from −20 to 20 degrees; default 0. |
-| `Caption.fontSize` | Finite number from 12 to 120; default 52. Local rendering treats this as a 512-based relative value and scales against the output canvas short edge; the source image itself is not scaled in original mode. Native generation receives `fontSize / 512` as approximate glyph-height proportion, not a precise pixel guarantee. Current UI sliders use 20–96. |
-| `Caption.text` | Up to 48 Unicode code points including line breaks; six-digit hex `color` and `stroke` remain required after normalization. `generated` jobs reject empty/whitespace-only text before queue creation. |
-| `Reaction.textMode?`, `Reaction.captionStyleId?` | Recommendations, also allowed in overrides. Explicit `Project.captions[reactionId]` settings take priority. |
-| `Job.textMode?`, `Job.generatedText?` | Snapshot of actual generation intent. `generatedText` records the exact requested native text; it is not OCR or proof that the model rendered the spelling correctly. Older jobs without metadata remain compatible with clean-source post-captioning. |
-| `Catalog.captionStyles`, `Catalog.personas` | Caption metadata and editable persona presets. Persona entries contain `id`, `name`, `description`, `brief`; choosing one copies `brief` into `Character.memePersona`. |
+| 项目 name、角色 name | 各最多 100 |
+| 角色 description/identity/outfit/personality | 各最多 4000 |
+| 角色 outfitMode? | reference（默认）或 custom |
+| 角色 referenceAssetId?/anchorAssetId? | 指向已保存素材；完整角色对象中省略字段可清除选定引用 |
+| 角色 memePersona? | 最多 1200，控制表演、动机、语气与反差，不覆盖身份或服装依据 |
+| 角色 signatureMotifs? | 最多 400，只装饰动作已经需要的道具，空值不增加道具 |
+| selectedIds、生成请求 reactionIds | 原输入数组最多 200 项，去重并保留首次顺序；选中项必须存在 |
+| customReactions | 最多 64 个，ID 不得与内置或其他自定义反应重复 |
+| 反应 name/caption/category/emoji | 各最多 100；action 最多 3000 |
+| 反应 tags | 最多 20 个字符串，每个最多 100 |
+| 反应 compositionId?/interactionId? | 必须存在于目录对应列表中 |
+| 反应 intensity? | 整数 1、2、3；省略时提示词按 2 处理 |
+| 反应 intent? | 最多 160，描述观众感受，不是绘制文字 |
+| 反应 textMode?/captionStyleId? | 默认建议；明确保存的 captions[id] 优先 |
 
-The shared module `src/shared/typography.ts` exports `resolveCaptionMode(caption?)`, `defaultCaptionFor(reaction)`, `captionStyleDefaults(styleId)` and `captionStyles`. New defaults use reaction recommendations or `overlay` + `round`. `captionStyleDefaults` returns only `styleId`, `color`, `stroke`, `fontSize`, `rotation`: apply these when selecting a preset while retaining the current text, mode, enabled flag and position. This ensures bubble lettering gets its dark-ink palette instead of inheriting white text from a legacy caption.
+可编辑反应字段也支持 overrides[id]。overrides/captions 中不存在的反应 ID 被忽略。可用画风、构图、互动、选集和反应以 bootstrap.catalog 为准，不应按某个选集名称推断全库数量。界面选择选集只改变 selectedIds，不清除用户覆盖项、人物或文字设置。
 
-The six style names are 经典粗描边 (`classic`), 快乐软糖 (`round`), 随手碎碎念 (`handwritten`), 毛笔炸毛 (`brush`), 软萌对话泡 (`bubble`) and 漫画重击 (`comic`). `round`, `bubble`, `comic` use ZCOOL KuaiLe; `handwritten` uses Long Cang; `brush` uses Zhi Mang Xing. `classic` retains the system Chinese sans-serif fallback. The three font files, their original copyright/OFL 1.1 notices and source manifest ship in [public/fonts](../public/fonts/README.md). Their font licenses are separate from the application's MIT license; they are selected project fonts, not verified identifications of the fonts used in whale/DeepSeek reference memes.
+可选 miniScene 必须是完整对象 `{enabled:boolean,setup:string,reveal:string,prop:string}`；后三项上限分别为 240、240、160，可留空。关闭时保留内容，但不注入小剧场方向；省略或全空也不注入。它表达一个静止瞬间，仍服从镜头、手势、服装和文字模式。
 
-Catalog pack `bratty12` (嘴硬小剧场 12) combines four new reactions with eight existing ones. Its recommendations mix four `generated`, four `overlay` and four `none`; saved project captions can change that mix. New IDs are `smug-challenge`, `caught-bluff`, `little-victory`, `quiet-softening`. Pack `all64` contains all 64 recipes; prior reaction IDs and packs remain available. Persona presets `adult-bratty`, `warm-soft`, `dry-deadpan` describe adult character performance; they do not issue age/body/wardrobe redesign commands. These are editable creative selections, not usage rankings.
+前端 applyProjectChange 在换画风或角色参考图时清除选定母版；相同参考、普通文字编辑、选用母版不会误清除，素材与历史不删除。这是前端工作流规则，直接使用 API 的客户端需自行执行，服务端不会代替客户端使旧母版失效。
 
-### Source image versus current caption settings
+## 三种文字模式
 
-- `none`: prompt requests no text; rendering adds no local caption. Stored wording remains available for later toggling.
-- `overlay`: prompt requests a clean source; current local text, font, color, size, position, line breaks and rotation can be changed or switched off without altering source pixels. Ordinary clean images from previous versions remain editable this way.
-- `generated`: prompt includes one exact quoted phrase plus lettering, position and size direction; removes conflicting no-text instructions. Returned letters belong to the raster image. The caller must review spelling and layout; native Chinese correctness is not guaranteed.
+Caption 包含 text/enabled/color/stroke/position/fontSize，可选 mode/styleId/rotation。
 
-A source recorded as `Job.textMode: generated` must never receive a second local caption, regardless of subsequently edited project settings. Selecting `none`, requesting `caption=0`, or disabling captions during ZIP export only skips postprocessing: none of these erase source lettering. To change/remove it, save new settings and create a new generation (`none` for a text-free version). Retry deliberately retains the old prompt and text snapshot. For a clean source switched to desired `generated`, show the clean original and explain that its requested lettering appears only after a new generation; do not simulate it as already baked in.
+| 字段 | 契约 |
+| --- | --- |
+| mode | none、overlay、generated；缺省 overlay |
+| enabled | 布尔值；false 或 mode:none 均优先解析为不加字 |
+| text | 最多 48 个 Unicode code points，含换行 |
+| color/stroke | 六位十六进制色值；校验缺省为 #ffffff、#3b2332 |
+| position | top/bottom/left/right；缺省 bottom |
+| fontSize | 12–120，缺省 52；以画布短边 512 像素为相对尺寸基准 |
+| rotation | 有限数值 −20 至 20；缺省 0 |
+| styleId | classic/round/handwritten/brush/bubble/comic |
 
-Importers must declare already embedded text explicitly. No pixel inspection or OCR automatically determines `textMode`. Portable project recipes preserve the persona and per-reaction caption configuration; ZIP `recipe.json` additionally records result `textMode/generatedText`. Project recipe import creates a project, not reconstructed image jobs; import retained assets separately with their actual metadata when needed.
+- none：生成无字原图，本地不叠字，已保存文案仍保留。
+- overlay：生成无字原图，下载时按当前字体、颜色、位置排字，原文件不覆盖。
+- generated：准确文案与字样方向进入提示词；空白文案在创建任务前拒绝。模型实际拼写和布局需要人工检查。
 
-## Endpoints
+Job.textMode/generatedText 在创建时冻结，表示实际生成意图；generatedText 不是 OCR 或文字正确性的证明。已有 textMode:generated 的图片永远不叠第二层文字。选择 none、caption=0 或关闭 ZIP 加字，都不会擦除已画进原图的文字；需要用新设置另建生成任务，retry 则保留旧快照。
 
-All API results JSON unless PNG/ZIP; errors `{error:string}` with non-2xx status.
+无文字元数据的旧任务按可后期排字原图兼容。新默认由 defaultCaptionFor(reaction) 提供；明确保存的 Caption 未指定字样时保持 classic。字样预设只改变 styleId/color/stroke/fontSize/rotation，不覆盖当前文字、模式或位置。
 
-- GET `/api/bootstrap` -> Bootstrap (initial Margaret project, no bundled private image until imported locally).
-- POST `/api/projects` body optional `{name,character}` -> Project.
-- PUT `/api/projects/:id` body Project editable fields -> Project (validate; ignore supplied id/timestamps).
-- POST `/api/assets` JSON `{filename,dataUrl,provenance?}` -> Asset, validate/decode image up to 15 MB. Stored filenames random, URL `/assets-local/:id.png`.
-- GET `/api/settings` -> safe ProviderSettings. PUT `/api/settings` with ProviderSettings -> safe settings; blank/omitted apiKey preserves existing secret (explicit `clearApiKey:true` clears it). provider/base URL changes should clear prior key unless a new key is supplied.
-- POST `/api/jobs` `{projectId,kind:'sticker'|'anchor'|'character',reactionIds?:string[],requestId:string}` -> `{jobs:Job[]}`. `reactionIds` accepts at most 200 entries, or defaults to the project's unchanged `selectedIds`. Freeze prompt/reference/provider config plus `textMode` and, for native lettering, `generatedText`; enabled mini-scenes and signature motifs are part of the frozen sticker prompt. Reject missing config/reference and empty native text before queue creation. In reference-outfit mode prioritize `referenceAssetId`, with a distinct `anchorAssetId` as optional second reference; otherwise prefer anchor then original. Repeated requestId must not cause duplicate paid calls. kind character may have no reference; anchor must have reference. Each single sticker -> single upstream call. No automatic fallback from edit to text-only. Default concurrency 2.
-- GET `/api/jobs?projectId=...` -> Job[]. GET `/api/jobs/:id` -> Job.
-- POST `/api/jobs/:id/cancel` -> Job (queued cancelled; running best-effort abort with ambiguity explained).
-- POST `/api/jobs/:id/retry` `{requestId:string}` -> Job (new version; original prompt and `textMode/generatedText` preserved, no destructive overwrite; explicit action for unknown jobs). New project edits require POST `/api/jobs` with a new requestId instead.
-- POST `/api/jobs/import` `{projectId,assetId,kind,reactionId?,name,provenance,textMode?,generatedText?}` -> Job succeeded imported provenance (max20000 characters, so full generation prompts can be retained), not a provider run (used to bring back Niji or external assets). model/provider describe imported. `textMode` defaults to `overlay` for stickers and `none` for other kinds. Declare `generated` for an image already containing lettering; `generatedText` is optional and permitted only with that mode, with the same 48-code-point limit. The asset is not automatically stripped or OCR-checked.
-- GET `/api/projects/:id/recipe` -> portable JSON `{version:1,project}` sans asset paths/secrets; reference filenames may be a separate manifest. POST `/api/projects/import` `{version:1,project}` -> new Project with no untrusted local asset IDs.
-- GET `/api/projects/:id/export?captions=1&size=original` -> ZIP successful sticker results (latest successful per reaction), `originals/` always, `resized/` only for numeric sizes, `captioned/` if requested + `recipe.json` + `contact-sheet.png`; fail explicitly if no sticker images. `resized/` means resized source, not guaranteed text-free. Optional captioned output respects each current caption mode and actual native-text job flag; native text is never duplicated or erased. ZIP result records include `textMode/generatedText`. Asset-level download via URL remains original file.
-- GET `/api/jobs/:id/render?size=original&caption=1` -> PNG using current project caption override or `defaultCaptionFor(reaction)`. Add post-caption only when the desired mode is `overlay` and actual `job.textMode` is not `generated`; `caption=0` skips post-caption only. Preserve real alpha (don't silently fake transparency). Use Sharp with escaped Pango/SVG; the three named fonts are loaded from bundled `public/fonts` files, not a required system installation.
-- GET `/api/health` -> `{ok:true}`.
+## 供应商与引用顺序
 
-Auth: loopback default. `STUDIO_TOKEN` optional; when enabled protect APIs and private assets via HTTP-only same-site cookie obtained by POST `/api/login` `{token}` (also accept Bearer). No secret in URL. Refuse non-loopback HOST without token. Origin/Host validation to stop unrelated websites from invoking local paid generation. Tests inject local fixture provider through createApp options (do not expose fixture provider in production UI).
+provider 支持 openai、gemini、runninghub；基础字段为 baseUrl/model/size/concurrency/apiKey。并发为 1–4、默认 2，调度采用当前并发设置。baseUrl 必须 HTTPS，仅 localhost/127.0.0.1/[::1] 可用 HTTP；不得含账号、密码、查询参数或片段。
 
-Backend entry exports `createApp({dataDir?, ...test options})` or equivalent for tests and `index.ts` launches server. Persist SQLite JSON records using Node built-in sqlite. Mark running jobs unknown after restart; keep queued jobs recoverable. API key stays private server config, never in bootstrap or export.
+| 类型 | 请求行为 |
+| --- | --- |
+| OpenAI 兼容 | 有参考图用 /images/edits，否则 /images/generations；单参考使用 image，双参考按顺序使用 image[] |
+| Gemini 原生 | /models/:model:generateContent；文本后按顺序放 PNG inlineData |
+| RunningHub | 站点根地址，不带 API 路径；上传、提交并查询指定应用/工作流 |
+
+OpenAI size 允许 256x256/512x512/1024x1024/1536x1024/1024x1536/1792x1024/1024x1792/auto；Gemini 允许 1K/2K/4K/1024x1024/1536x1024/1024x1536/auto。Gemini 像素尺寸用于推导宽高比，图像档位缺省 1K。这些是供应商请求参数，最终像素尺寸由返回结果决定，与下载 size 不同。
+
+RunningHub 配置包含 kind（app/workflow）、resourceId、promptNode、可选 referenceNode/styleReferenceNode、extraNodes、outputIndex。节点为 `{nodeId,fieldName,fieldValue?}`；资源和节点 ID 是 1–40 位十进制数字字符串，不能转换成 Number。fieldName 为 1–100 位字母、数字、点、下划线或短横线，首字符不能是点或短横线；节点 ID/字段名组合不可重复。extraNodes 最多 32 个，其 fieldValue 必须是字符串、最多 12000；outputIndex 为 0–15。生成任务存在第一参考图时必须配置 referenceNode。model 规范为 app:资源ID 或 workflow:资源ID。
+
+角色图可不带参考，母版生成必须有原始 referenceAssetId。表情任务的顺序为：
+
+1. reference 服装模式且有原始参考：第一张是原始身份/服装图，第二张是不同 ID 的母版，只控制绘制风格。
+2. custom 模式或没有原始参考：优先母版，否则原始参考；服装遵从明确的换装依据。
+3. RunningHub 未配置第二参考节点时只上传第一张，保持原图优先，不用母版替换它。
+
+不因编辑失败自动降级为无参考文生图，也不自动重试提交。每个任务可以包含上传和查询请求，但只有一次生成提交。
+
+PUT /api/settings 中空白/省略 apiKey 只在供应商及规范化地址未改变时保留旧密钥；改供应商或地址会清除旧密钥，除非同时提供新密钥。clearApiKey:true 显式清除当前配置。读取设置返回 hasApiKey，不返回密钥。
+
+## 任务、去重与恢复
+
+创建请求为 `{projectId,kind,reactionIds?,requestId}`，kind 为 character/anchor/sticker。表情省略 reactionIds 时使用选中列表；其他类型忽略列表。服务端校验配置与素材，冻结提示词、参考 ID、供应商设置和文字模式，返回 queued。成功不会自动把新图设为角色或母版参考，仍需选用。
+
+requestId 在工作室内持久化、跨操作共用。相同编号及签名返回已有任务；同编号但项目、类型、反应列表（含顺序）不同，或用于另一操作，返回 409。任务与编号登记在同一事务内。修改方案后要重新生成，应使用新编号；旧编号不会使旧任务采用新配置。
+
+| 状态 | 含义及操作 |
+| --- | --- |
+| queued | 等待提交；普通排队任务取消后为 cancelled |
+| running | 正在提交或等待；取消只停止本地等待，转为 unknown |
+| succeeded | 素材已保存，可选用或下载 |
+| failed | 已确定失败，修正后显式重试 |
+| unknown | 结果不明，可能已生成或计费，先核对远程记录 |
+| cancelled | 普通排队任务已取消，未提交图片服务 |
+
+retry 创建新任务，保留旧提示词、参考和原生文字快照，使用当前供应商配置；不覆盖旧结果。队列中的任务及外部导入不能重试。已知 RunningHub 远程 ID 且尚未成功的任务应使用 resume，不能用 retry 重复提交。
+
+RunningHub 收到 remoteTaskId 后先持久化再查询。resume 仅允许已知远程 ID、状态为 unknown/failed 且未活跃的任务，用保存配置查询原任务。取消这种任务只停止本地查询，不表示远程取消。
+
+重启时，已知远程 ID 的运行中/不明 RunningHub 任务恢复查询；其他被中断的运行任务标记 unknown，不自动重复提交；仍为 queued 的任务继续排队。普通云端等待最长约四分钟，RunningHub 约三十分钟，超时不等于远程失败。
+
+供应商密钥与任务配置快照仅存于服务端 SQLite，不进入 Bootstrap、公开 Job 或配方。修改/清除当前密钥不会追溯清除旧快照；数据目录和备份仍可能含旧密钥，当前没有应用层数据库加密。
+
+## 导入与原尺寸导出
+
+上传接受 PNG/JPEG/WebP/AVIF/GIF 静态首帧，dataUrl 为 base64。上传文件最大 15 MiB、JSON 请求体最大 22 MiB、解码图像最多 4000 万像素；供应商返回图片另有 40 MiB 上限。保存为 PNG，Asset 记录 id/url/filename/width/height/hasAlpha/provenance?；素材 URL 返回这个保存后的文件。
+
+外部任务导入体为 `{projectId,assetId,kind,reactionId?,name?,provenance?,textMode?,generatedText?}`。素材需先上传，表情须有合法 reactionId；provenance 最多 20000，可保存实际提示词。任务为 succeeded、provider/model 为 imported，不运行供应商。表情 textMode 缺省 overlay，其他类型缺省 none；已带字图必须明确传 generated。generatedText 可省略，但仅允许用于 generated，最多 48 code points，不自动 OCR。
+
+下载省略 size 等同 original：保留保存后 PNG 的原始宽高，不缩放、不补方、不放大。无有效后期文字时直接返回原 PNG 字节；有叠字时按短边缩放字号、按真实宽高排版，文字外像素不变。显式 size=128/256/512/1024 输出对应正方形，等比适配并用透明空白补齐；其他值（包括空字符串）拒绝。单图 caption=0 关闭后期文字，省略或其他值使用当前配置。聊天缩略图可请求 512，不改变下载原图。
+
+ZIP 选择每个反应最新的成功表情任务，导出整个项目的成功反应，不仅限当前 selectedIds；没有成功表情则返回 409。
+
+| ZIP 路径 | 内容 |
+| --- | --- |
+| originals/ | 始终存在，保存后的原始 PNG |
+| resized/ | 仅显式数值尺寸；不是保证无字的副本 |
+| captioned/ | 仅 captions=1；遵从当前模式和原生字标记 |
+| contact-sheet.png | 小尺寸索引，不代表交付图片质量 |
+| recipe.json | 配方、导出设置与结果来源 |
+
+配方为 `{version:1,project,references}`，移除项目 ID/时间及角色素材 ID，references 只保留用途和文件名。ZIP 另加 `export:{size,originalResolution}` 和 results；结果包含 name/reactionId/prompt/provider/model/filename/width/height/hasAlpha/textMode/generatedText?，宽高为源图尺寸。配方导入容忍附加元数据，但只创建项目，不重建素材或任务历史，图片须单独导入。
+
+## 浏览器状态
+
+| localStorage Key | 内容 |
+| --- | --- |
+| character-sticker-studio:guide:v1 | 成功开始或主动关闭引导后写入字符串 1 |
+| character-sticker-studio:active-project:v1 | 最后选中、创建或导入的项目 ID |
+
+偏好按 origin 隔离。项目 ID 失效则回到 Bootstrap 第一个项目，再依据已选参考/母版进入角色、母版或表情页面。存储属性访问、读写失败不阻止操作，但偏好可能无法跨刷新保留。
+
+引导只创建独立项目，不生成图片：先保存当前编辑，新角色仅使用输入名字与简介，不继承当前项目的其他资料或素材。失败保留输入、不写已看标志；成功或主动关闭才写入。引导名字最多 80、简介最多 2000，这不替代项目 API 的字段上限。

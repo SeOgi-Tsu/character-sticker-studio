@@ -29,7 +29,9 @@ function zipEntries(buffer:Buffer){const entries=new Map<string,Buffer>();const 
 test('bootstrap, editable project, secret isolation and portable recipe', async()=>{
  const f=await fixture({autoStart:false});
  try {
-  const {data:boot}=await f.call('/api/bootstrap'); assert.equal(boot.projects[0].character.name,'Margaret');
+  const {data:boot}=await f.call('/api/bootstrap'); assert.equal(boot.projects[0].character.name,'新角色');
+  for(const field of ['description','identity','outfit','personality'])assert.equal(boot.projects[0].character[field],'',`fresh installs must not inherit a personal ${field}`);
+  assert.equal(boot.projects[0].character.referenceAssetId,undefined);assert.equal(boot.projects[0].character.anchorAssetId,undefined);
   const p=boot.projects[0]; const asset=await upload(f); assert.equal(asset.hasAlpha,true);
   const saved=(await f.call(`/api/projects/${p.id}`,'PUT',{...p,name:'我的表情',character:{...p.character,referenceAssetId:asset.id},id:'tampered'})).data;
   assert.equal(saved.id,p.id); assert.equal(saved.character.referenceAssetId,asset.id);

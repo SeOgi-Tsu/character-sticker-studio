@@ -129,7 +129,7 @@ export function createApp(options:AppOptions={}) {
   const captions:Project['captions']=Object.create(null);for(const [id,value] of Object.entries(object(p.captions??base.captions))){if(!known.has(id))continue;captions[id]=validateCaption(value);}
   return {...base,name:text(p.name,base.name,100),character:p.character===undefined?base.character:validateCharacter(p.character,stripAssets),styleId,selectedIds,customReactions,overrides,captions,updatedAt:now()};
  }
- function newProject():Project{const date=now();return {id:randomUUID(),name:'Margaret 的表情工坊',character:{name:'Margaret',description:'可爱、亲近、有一点小傲娇的虚拟角色',identity:'浅金色双马尾，红色眼睛，黑色蝴蝶结，金色心形饰件',outfit:'保留参考图中的服装剪影、配色和饰件',outfitMode:'reference',personality:'软萌、活泼，情绪表达鲜明'},styleId:catalog.styles[0].id,selectedIds:catalog.packs[0]?.reactionIds||catalog.reactions.slice(0,24).map(r=>r.id),customReactions:[],overrides:{},captions:{},createdAt:date,updatedAt:date};}
+ function newProject():Project{const date=now();return {id:randomUUID(),name:'我的表情工坊',character:{name:'新角色',description:'',identity:'',outfit:'',outfitMode:'reference',personality:''},styleId:catalog.styles[0].id,selectedIds:catalog.packs[0]?.reactionIds||catalog.reactions.slice(0,24).map(r=>r.id),customReactions:[],overrides:{},captions:{},createdAt:date,updatedAt:date};}
  if(store.all('projects').length===0){const initial=newProject();store.put('projects',initial.id,initial);}
  for(const record of store.all<StoredJob>('jobs'))if(record.job.status==='running'||(record.job.status==='unknown'&&record.job.provider==='runninghub'&&record.job.remoteTaskId)){
   const recoverable=record.job.provider==='runninghub'&&Boolean(record.job.remoteTaskId);
