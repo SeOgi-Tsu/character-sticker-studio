@@ -45,7 +45,7 @@ test('queued generation freezes native text and retry preserves it after desired
   const withText=(await f.call(`/api/jobs/${original.id}/render?caption=1`)).data,raw=(await f.call(`/api/jobs/${original.id}/render?caption=0`)).data;assert.ok(withText.equals(raw),'native lettering must never be double-stamped');
   const retried=(await f.call(`/api/jobs/${original.id}/retry`,'POST',{requestId:'retry-native'})).data;assert.equal(retried.textMode,'generated');assert.equal(retried.generatedText,caption.text);assert.equal(retried.prompt,original.prompt);await f.until(retried.id);
   const boot=(await f.call('/api/bootstrap')).data;assert.ok(!JSON.stringify(boot).includes('private-fixture-key'));
-  const zipped=zipEntries((await f.call(`/api/projects/${f.p.id}/export?captions=1`)).data);const recipe=JSON.parse(zipped.get('recipe.json')!.toString());assert.equal(recipe.results[0].textMode,'generated');assert.equal(recipe.results[0].generatedText,caption.text);assert.ok(!JSON.stringify(recipe).includes('private-fixture-key'));
+  const zipped=zipEntries((await f.call(`/api/projects/${f.p.id}/export?captions=1&size=512`)).data);const recipe=JSON.parse(zipped.get('recipe.json')!.toString());assert.equal(recipe.results[0].textMode,'generated');assert.equal(recipe.results[0].generatedText,caption.text);assert.ok(!JSON.stringify(recipe).includes('private-fixture-key'));
   const resized=[...zipped].find(([name])=>name.startsWith('resized/'))![1],captioned=[...zipped].find(([name])=>name.startsWith('captioned/'))![1];assert.ok(resized.equals(captioned));
  }finally{await f.dispose();}
 });

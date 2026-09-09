@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Asset, Caption } from '../src/shared/types.ts';
+import type { Asset, Caption, ExportSize } from '../src/shared/types.ts';
 import { captionStyles, resolveCaptionMode } from '../src/shared/typography.ts';
 import type { Store } from './store.ts';
 
@@ -12,23 +12,51 @@ export const escapeXml=(text:string)=>text.replace(/[<>&"']/g,c=>({'<':'&lt;','>
 export function exportName(value:string) {return value.replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').replace(/^\.+/,'').slice(0,70)||'sticker';}
 const transparent={r:0,g:0,b:0,alpha:0};
 const fontDirectory=fileURLToPath(new URL('../public/fonts/',import.meta.url));
+const captionText=(value:string)=>Array.from(value.replace(/\r\n?/g,'\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g,'')).slice(0,48).join('');
 export interface RenderOptions { embeddedText?:boolean; }
+/** Preserve untouched transparent/partly transparent pixels; whole-image premultiplication rounds them. */
+async function compositeOriginalPixels(base:Buffer,overlay:Buffer,left=0,top=0){
+ const source=await sharp(base).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+ const layer=await sharp(overlay).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+ const width=source.info.width,height=source.info.height;
+ for(let y=0;y<layer.info.height;y++)for(let x=0;x<layer.info.width;x++){
+  const targetX=left+x,targetY=top+y;if(targetX<0||targetX>=width||targetY<0||targetY>=height)continue;
+  const from=(y*layer.info.width+x)*4,alpha=layer.data[from+3];if(!alpha)continue;
+  const to=(targetY*width+targetX)*4,foreground=alpha/255,background=source.data[to+3]/255*(1-foreground),combined=foreground+background;
+  for(let channel=0;channel<3;channel++)source.data[to+channel]=Math.round((layer.data[from+channel]*foreground+source.data[to+channel]*background)/combined);
+  source.data[to+3]=Math.round(combined*255);
+ }
+ return sharp(source.data,{raw:{width,height,channels:4}}).png().toBuffer();
+}
 function expandAlpha(source:Buffer,width:number,height:number,radius:number){
- // A circular maximum filter keeps antialiasing and grows white alpha outward.
- // Sharp 0.35's dilate treats black as foreground, so it cannot consume this mask directly.
- const result=Buffer.alloc(source.length),offsets:{x:number;y:number}[]=[];
- for(let y=-radius;y<=radius;y++)for(let x=-radius;x<=radius;x++)if(x*x+y*y<=radius*radius)offsets.push({x,y});
- for(let y=0;y<height;y++)for(let x=0;x<width;x++){const value=source[y*width+x];if(!value)continue;for(const offset of offsets){const xx=x+offset.x,yy=y+offset.y;if(xx<0||xx>=width||yy<0||yy>=height)continue;const index=yy*width+xx;if(value>result[index])result[index]=value;}}
+ // Exact circular maximum filter: each circle row is a sliding horizontal maximum.
+ // This preserves antialiasing and the old outline, using O(radius) work per pixel.
+ const result=Buffer.alloc(source.length),queue=new Int32Array(width);
+ for(let dy=0;dy<=radius;dy++){
+  const reach=Math.floor(Math.sqrt(radius*radius-dy*dy));
+  for(let y=0;y<height;y++){
+   const row=y*width,above=y-dy,below=y+dy;let head=0,tail=0;
+   for(let end=0;end<width+reach;end++){
+    if(end<width){const value=source[row+end];while(tail>head&&source[row+queue[tail-1]]<=value)tail--;queue[tail++]=end;}
+    while(tail>head&&queue[head]<end-2*reach)head++;
+    const x=end-reach;if(x<0)continue;
+    const value=source[row+queue[head]];if(!value)continue;
+    if(above>=0){const index=above*width+x;if(value>result[index])result[index]=value;}
+    if(dy&&below<height){const index=below*width+x;if(value>result[index])result[index]=value;}
+   }
+  }
+ }
  return result;
 }
 
 /** Pango loads each bundled font explicitly. SVG font-family alone cannot load a TTF. */
-async function captionLayer(caption:Caption,size:number){
+async function captionLayer(caption:Caption,canvasWidth:number,canvasHeight:number){
+ const size=Math.min(canvasWidth,canvasHeight);
  const style=captionStyles.find(s=>s.id===caption.styleId)||captionStyles[0];
  const side=caption.position==='left'||caption.position==='right';
- const text=Array.from(caption.text.replace(/\r\n?/g,'\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g,'')).slice(0,48).join('');
+ const text=captionText(caption.text);
  const fontSize=Math.max(12,Math.min(Number(caption.fontSize)||52,120))*size/512;
- const maxWidth=Math.round(size*(side?.32:.86)),maxHeight=Math.round(size*(side?.76:.43));
+ const maxWidth=Math.max(1,Math.round(canvasWidth*(side?.32:.86))),maxHeight=Math.max(1,Math.round(canvasHeight*(side?.76:.43)));
  const stroke=Math.max(1,Math.round(fontSize*(style.id==='handwritten'?.055:style.id==='brush'?.065:style.id==='bubble'?.02:.105)));
  const padding=Math.max(5,Math.ceil(fontSize*.22))+stroke;
  const color=/^#[\da-f]{6}$/i.test(caption.color)?caption.color:'#ffffff';
@@ -67,23 +95,29 @@ export class Images {
   const asset:Asset={id,url:`/assets-local/${id}.png`,filename:exportName(filename),width:meta.width!,height:meta.height!,hasAlpha:meta.hasAlpha===true,...(provenance?{provenance}: {})};
   this.store.put('assets',id,asset);return asset;
  }
- async render(asset:Asset,size:number,caption?:Caption,options:RenderOptions={}) {
+ async render(asset:Asset,size:ExportSize='original',caption?:Caption,options:RenderOptions={}) {
   const input=await this.load(asset.id);
-  const base=await sharp(input).resize(size,size,{fit:'contain',background:{r:0,g:0,b:0,alpha:0}}).png().toBuffer();
-  if(options.embeddedText||!caption||resolveCaptionMode(caption)!=='overlay'||!caption.text.trim())return base;
+  const original=size==='original';
+  if(caption)caption={...caption,text:captionText(caption.text)};
+  const applyCaption=!options.embeddedText&&caption&&resolveCaptionMode(caption)==='overlay'&&caption.text.trim();
+  if(original&&!applyCaption)return input;
+  const base=original?input:await sharp(input).resize(size,size,{fit:'contain',background:transparent}).png().toBuffer();
+  if(!applyCaption||!caption)return base;
+  const dimensions=original?await sharp(input).metadata():{width:size,height:size};
+  const width=dimensions.width!,height=dimensions.height!,scale=Math.min(width,height);
   // Preserve the appearance of already-saved classic single-line captions.
   if((caption.styleId===undefined||caption.styleId==='classic')&&!caption.rotation&&!/[\r\n]/.test(caption.text)&&!['left','right'].includes(caption.position)){
   const text=Array.from(caption.text).slice(0,48).join('');
   const count=Array.from(text).reduce((sum,ch)=>sum+(ch.charCodeAt(0)>255?1:0.58),0);
-  const fontSize=Math.max(12,Math.min(caption.fontSize*size/512,size*.84/Math.max(1,count),size*.16));
-  const y=caption.position==='top'?fontSize+size*.045:size-size*.065;
-  const svg=`<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg"><text x="50%" y="${y}" text-anchor="middle" font-family="Noto Sans CJK SC,Microsoft YaHei,Arial,sans-serif" font-weight="900" font-size="${fontSize}" fill="${caption.color}" stroke="${caption.stroke}" stroke-width="${Math.max(2,fontSize*.14)}" stroke-linejoin="round" paint-order="stroke">${escapeXml(text)}</text></svg>`;
-  return sharp(base).composite([{input:Buffer.from(svg)}]).png().toBuffer();
+  const fontSize=Math.max(original?12*scale/512:12,Math.min(caption.fontSize*scale/512,width*.84/Math.max(1,count),scale*.16));
+  const y=caption.position==='top'?fontSize+scale*.045:height-scale*.065;
+  const svg=`<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg"><text x="50%" y="${y}" text-anchor="middle" font-family="Noto Sans CJK SC,Microsoft YaHei,Arial,sans-serif" font-weight="900" font-size="${fontSize}" fill="${caption.color}" stroke="${caption.stroke}" stroke-width="${Math.max(2,fontSize*.14)}" stroke-linejoin="round" paint-order="stroke">${escapeXml(text)}</text></svg>`;
+  return original?compositeOriginalPixels(base,Buffer.from(svg)):sharp(base).composite([{input:Buffer.from(svg)}]).png().toBuffer();
   }
-  const layer=await captionLayer(caption,size),meta=await sharp(layer).metadata(),margin=Math.round(size*.035);
-  const left=caption.position==='left'?margin:caption.position==='right'?size-meta.width!-margin:Math.round((size-meta.width!)/2);
-  const top=caption.position==='top'?margin:caption.position==='bottom'?size-meta.height!-margin:Math.round((size-meta.height!)/2);
-  return sharp(base).composite([{input:layer,left:Math.max(0,left),top:Math.max(0,top)}]).png().toBuffer();
+  const layer=await captionLayer(caption,width,height),meta=await sharp(layer).metadata(),margin=Math.round(scale*.035);
+  const left=caption.position==='left'?margin:caption.position==='right'?width-meta.width!-margin:Math.round((width-meta.width!)/2);
+  const top=caption.position==='top'?margin:caption.position==='bottom'?height-meta.height!-margin:Math.round((height-meta.height!)/2);
+  return original?compositeOriginalPixels(base,layer,Math.max(0,left),Math.max(0,top)):sharp(base).composite([{input:layer,left:Math.max(0,left),top:Math.max(0,top)}]).png().toBuffer();
  }
  async contactSheet(buffers:Buffer[],names:string[]) {
   const columns=Math.min(4,buffers.length);const rows=Math.ceil(buffers.length/columns);const tile=256;const height=292;

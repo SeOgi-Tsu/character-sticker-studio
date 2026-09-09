@@ -7,7 +7,7 @@ import archiver from 'archiver';
 import { catalog } from '../src/shared/catalog.ts';
 import { buildAnchorPrompt, buildCharacterPrompt, buildStickerPrompt } from '../src/shared/prompts.ts';
 import { captionStyles, defaultCaptionFor, resolveCaptionMode } from '../src/shared/typography.ts';
-import type { Asset, Caption, Character, Job, Project, ProviderSettings, Reaction } from '../src/shared/types.ts';
+import type { Asset, Caption, Character, ExportSize, Job, Project, ProviderSettings, Reaction } from '../src/shared/types.ts';
 import { Store } from './store.ts';
 import { Images, exportName } from './images.ts';
 import { CloudImageProvider, normalizeBaseUrl, ProviderError, validateRunningHubSettings, type ImageProvider } from './provider.ts';
@@ -163,7 +163,7 @@ export function createApp(options:AppOptions={}) {
  function saveBatch(key:string,signature:string,records:StoredJob[]){store.transaction(()=>{for(const record of records)store.put('jobs',record.job.id,record);store.put('requests',key,{signature,ids:records.map(r=>r.job.id)});});setImmediate(pump);return records.map(r=>r.job);}
  function portable(project:Project){const {referenceAssetId,anchorAssetId,...character}=project.character;const {id,createdAt,updatedAt,...rest}=project;return {version:1,project:{...rest,character},references:[referenceAssetId&&{role:'reference',filename:store.get<Asset>('assets',referenceAssetId)?.filename},anchorAssetId&&{role:'anchor',filename:store.get<Asset>('assets',anchorAssetId)?.filename}].filter(Boolean)};}
  function captionFor(job:Job):Caption|undefined{if(!job.reactionId)return;const p=getProject(job.projectId);if(p.captions[job.reactionId])return p.captions[job.reactionId];const reaction=[...catalog.reactions,...p.customReactions].find(r=>r.id===job.reactionId);if(reaction)return defaultCaptionFor(getReaction(p,job.reactionId));return {text:getStoredJob(job.id).captionText||job.name,enabled:true,color:'#ffffff',stroke:'#382537',position:'bottom',fontSize:52};}
- function renderSize(value:unknown){const size=Number(value||512);if(![128,256,512,1024].includes(size))fail('导出尺寸支持 128、256、512 或 1024。');return size;}
+ function renderSize(value:unknown):ExportSize{if(value===undefined||value==='original')return 'original';if(typeof value!=='string'||!['128','256','512','1024'].includes(value))fail('导出尺寸支持原始分辨率（original）、128、256、512 或 1024。');return Number(value) as ExportSize;}
 
  app.get('/api/health',(_req,res)=>res.json({ok:true}));
  app.get('/api/bootstrap',(_req,res)=>res.json({projects:store.all('projects'),catalog,settings:safeSettings(settings()),assets:store.all('assets'),jobs:getJobs()}));
@@ -236,9 +236,10 @@ export function createApp(options:AppOptions={}) {
   const rendered:Buffer[]=[],entries:{name:string;data:Buffer}[]=[];
   for (const [index, job] of jobs.entries()) {
    const name = `${String(index + 1).padStart(2, '0')}-${exportName(job.name)}`;
-   entries.push({ name: `originals/${name}.png`, data: await images.load(job.asset!.id) });
-   const resized = await images.render(job.asset!, size);
-   entries.push({ name: `resized/${name}.png`, data: resized });
+   const original=await images.load(job.asset!.id);
+   entries.push({ name: `originals/${name}.png`, data: original });
+   const resized = size==='original'?original:await images.render(job.asset!, size);
+   if(size!=='original')entries.push({ name: `resized/${name}.png`, data: resized });
    const preview = req.query.captions === '1' ? await images.render(job.asset!, size, captionFor(job),{embeddedText:job.textMode==='generated'}) : resized;
    rendered.push(preview);
    if (req.query.captions === '1') entries.push({ name: `captioned/${name}.png`, data: preview });
@@ -246,7 +247,7 @@ export function createApp(options:AppOptions={}) {
   const contact=await images.contactSheet(rendered,jobs.map(j=>j.name));
   res.type('zip').setHeader('Content-Disposition',`attachment; filename="sticker-pack.zip"; filename*=UTF-8''${encodeURIComponent(exportName(project.name))}.zip`);
   const archive=archiver('zip',{zlib:{level:6}});archive.on('error',error=>{if(!res.headersSent)res.status(500).json({error:'压缩包导出失败，请重试。'});else res.destroy(error);});res.on('close',()=>{if(!res.writableEnded)archive.abort();});archive.pipe(res);
-  for(const entry of entries)archive.append(entry.data,{name:entry.name});archive.append(JSON.stringify({...portable(project),results:jobs.map(({name,reactionId,prompt,provider,model,asset,textMode,generatedText})=>({name,reactionId,prompt,provider,model,filename:asset?.filename,hasAlpha:asset?.hasAlpha,textMode:textMode??'overlay',...(generatedText!==undefined?{generatedText}:{})}))},null,2),{name:'recipe.json'});archive.append(contact,{name:'contact-sheet.png'});await archive.finalize();
+  for(const entry of entries)archive.append(entry.data,{name:entry.name});archive.append(JSON.stringify({...portable(project),export:{size,originalResolution:size==='original'},results:jobs.map(({name,reactionId,prompt,provider,model,asset,textMode,generatedText})=>({name,reactionId,prompt,provider,model,filename:asset?.filename,width:asset?.width,height:asset?.height,hasAlpha:asset?.hasAlpha,textMode:textMode??'overlay',...(generatedText!==undefined?{generatedText}:{})}))},null,2),{name:'recipe.json'});archive.append(contact,{name:'contact-sheet.png'});await archive.finalize();
  });
  app.use('/api',(_req,_res,next)=>next(new HttpError(404,'接口不存在。')));
  const dist=paths.frontendDir;if(existsSync(join(dist,'index.html'))){app.use(express.static(dist));app.get('/{*path}',(_req,res)=>res.sendFile(join(dist,'index.html')));}

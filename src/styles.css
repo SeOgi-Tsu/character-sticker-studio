@@ -479,8 +479,14 @@ svg { flex-shrink: 0; }
 .export-count > strong { font: italic 53px Georgia, serif; letter-spacing: -3px; color: #b18156; }
 .export-count > div > span { display: block; font-size: 14px; color: #92704e; }
 .export-count small { display: block; margin-top: 7px; font-size: 9px; color: #b29875; }
-.export-options { display: flex; align-items: center; gap: 15px; }
+.export-options { display: flex; flex-wrap: wrap; align-items: center; gap: 15px; }
 .export-options select { width: 91px; font-size: 10px; padding: 9px; }
+.export-options .export-size-select { width: auto; min-width: 158px; max-width: 100%; }
+.export-resolution-note { margin: 10px 0 16px; line-height: 1.7; }
+@media (max-width: 760px) {
+  .export-options .export-size-select { flex: 1 1 158px; }
+  .export-options > .button { flex: 1 1 100%; }
+}
 .export-explain { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; padding: 25px 0 5px; }
 .export-explain > div { background: #fbf8f1; border: 1px solid #e9dfcf; border-radius: 8px; padding: 21px; color: #b0936d; }
 .export-explain h3 { font-size: 12px; color: #8f7151; margin: 12px 0 8px; }

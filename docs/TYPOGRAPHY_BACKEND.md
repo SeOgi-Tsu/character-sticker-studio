@@ -1,5 +1,7 @@
 # Text rendering and immutable native lettering
 
+V0.9 exports at the source resolution by default. `size=original` preserves each image's actual width and height, including rectangles, and returns stored PNG bytes when no overlay applies. Caption glyphs are rendered at the target resolution using the shorter canvas edge for the existing 512-based font scale. Only explicitly selected numeric output sizes resize/pad the image. Contact sheets are thumbnail indexes and do not define the quality of the included images.
+
 `src/shared/typography.ts` is the shared source for six caption styles and reaction-based defaults. `resolveCaptionMode` preserves legacy `enabled` behavior: disabled wins; an older enabled caption defaults to overlay. Explicit legacy captions without a style keep their classic appearance.
 
 `server/images.ts` uses Sharp's Pango text input with an absolute `fontfile` for ZCOOL KuaiLe, Long Cang and Zhi Mang Xing. Fonts ship in `public/fonts`; the runtime does not require installation. Pango produces real glyph pixels, then a circular alpha maximum filter adds antialiased outlines. Bubble adds a restrained vector panel and comic adds a colored offset shadow. Only geometry and the existing classic path use SVG. Text is XML-escaped, capped at 48 Unicode characters, wrapped, fitted and positioned before bounded rotation. Classic single-line captions retain the old outlined sans-serif layout.

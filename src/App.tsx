@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowRight, BookOpen, Check, ChevronDown, CircleHelp, Coffee, Download, FileJson, Flower2, Heart, History, ImagePlus, Layers3, LoaderCircle, Menu, Plus, Search, Settings2, ShieldCheck, SlidersHorizontal, Smile, Sparkles, Upload, WandSparkles, X } from 'lucide-react';
-import type { Asset, Bootstrap, Caption, Catalog, Composition, Interaction, Job, Project, ProviderSettings, Reaction } from './shared/types';
+import type { Asset, Bootstrap, Caption, Catalog, Composition, ExportSize, Interaction, Job, Project, ProviderSettings, Reaction } from './shared/types';
 import { api, ApiError, download, errorMessage, post, readImage } from './lib/api';
 import { canResumeJob } from './lib/jobs';
 import { Field, Modal, Status } from './components/Common';
@@ -250,10 +250,10 @@ export default function App() {
     });
   }
   async function cancel(job: Job) { await run(async () => { const cancelled = await post<Job>(`/api/jobs/${job.id}/cancel`); setJobs(existing => withJobs(existing, [cancelled])); notify(job.status === 'running' ? '已请求停止；上游是否收费请查看任务说明。' : '已取消排队任务。'); }); }
-  async function downloadJob(job: Job) { await run(async () => { await saveAll(); await download(job.kind === 'sticker' ? `/api/jobs/${job.id}/render?size=512&caption=1` : job.asset!.url, `${job.name}.png`); }); }
+  async function downloadJob(job: Job) { await run(async () => { await saveAll(); await download(job.kind === 'sticker' ? `/api/jobs/${job.id}/render?size=original&caption=1` : job.asset!.url, `${job.name}.png`); }); }
   async function openPreview(job: Job) { await run(async () => { await saveAll(); setPreview(job); }); }
   async function exportRecipe() { await run(async () => { const current = await saveAll(); await download(`/api/projects/${current.id}/recipe`, `${current.character.name || 'character'}-recipe.json`); notify('配方已导出；参考图请单独保存。'); }); }
-  async function exportZip(captions: boolean, size: number) { await run(async () => { const current = await saveAll(); await download(`/api/projects/${current.id}/export?captions=${captions ? 1 : 0}&size=${size}`, `${current.character.name || 'character'}-stickers.zip`); }); }
+  async function exportZip(captions: boolean, size: ExportSize) { await run(async () => { const current = await saveAll(); await download(`/api/projects/${current.id}/export?captions=${captions ? 1 : 0}&size=${size}`, `${current.character.name || 'character'}-stickers.zip`); }); }
   async function importRecipe(file: File) { await run(async () => { await saveAll(); if (file.size > 2 * 1024 * 1024) throw new Error('配方文件需小于 2 MB'); let recipe: unknown; try { recipe = JSON.parse(await file.text()); } catch { throw new Error('请选择有效的 JSON 配方文件'); } const next = await post<Project>('/api/projects/import', recipe); setProjects(current => [next, ...current]); adoptProject(next); navigate('character'); notify('配方已导入，请重新添加角色参考图。'); }); }
   function addCustom(e: React.FormEvent) { e.preventDefault(); if (!projectRef.current) return; const item: Reaction = { id: `custom-${crypto.randomUUID()}`, name: custom.name, caption: custom.caption, action: custom.action, category: '我的自定义', emoji: '', tags: ['自定义'] }; changeProject({ customReactions: [...projectRef.current.customReactions, item], selectedIds: [...projectRef.current.selectedIds, item.id] }); setActiveId(item.id); setCategory('全部'); setSearch(''); setCustomOpen(false); setCustom({ name: '', caption: '', action: '' }); }
 

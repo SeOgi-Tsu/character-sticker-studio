@@ -6,6 +6,7 @@ export interface Character {
   signatureMotifs?: string;
 }
 export type TextMode = 'none' | 'overlay' | 'generated';
+export type ExportSize = 'original' | 128 | 256 | 512 | 1024;
 export type CaptionStyleId = 'classic' | 'round' | 'handwritten' | 'brush' | 'bubble' | 'comic';
 export interface Caption { text: string; enabled: boolean; color: string; stroke: string; position: 'top' | 'bottom' | 'left' | 'right'; fontSize: number; mode?: TextMode; styleId?: CaptionStyleId; rotation?: number; }
 export interface CaptionStyle { id: CaptionStyleId; name: string; description: string; fontFamily: string; fontFile?: string; prompt: string; }
