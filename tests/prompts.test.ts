@@ -12,7 +12,7 @@ const character: Character = {
 };
 
 test('catalog packs resolve to unique, selectable reactions with clear provenance', () => {
-  assert.equal(catalog.reactions.length, 70);
+  assert.equal(catalog.reactions.length, 76);
   assert.equal(new Set(catalog.reactions.map(item => item.id)).size, catalog.reactions.length);
   assert.equal(catalog.styles.length, 3);
   const sourceIds = new Set(catalog.sources.map(item => item.id));

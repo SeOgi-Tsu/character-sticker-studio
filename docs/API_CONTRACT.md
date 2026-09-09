@@ -1,4 +1,6 @@
-# Shared contract (frontend/backend/content) · v0.7.0
+# Shared contract (frontend/backend/content) · v0.8.0
+
+V0.8 is a catalog-only addition: 76 reactions, optional `playful6` and `all76` packs. The original `all70` still contains exactly 70 reactions and the default starter pack is unchanged. No request/response schema or provider protocol changed.
 
 V0.2 adds per-reaction `compositionId`, `catalog.compositions`, RunningHub provider settings and `POST /api/jobs/:id/resume`. See [V2_CONTRACT.md](V2_CONTRACT.md) for the exact additions. Known RunningHub remote tasks resume querying on restart; other ambiguous submissions remain unknown. All original endpoints remain compatible.
 

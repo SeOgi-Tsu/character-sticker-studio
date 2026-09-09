@@ -251,7 +251,34 @@ const originalReactions = [...cute, ...chaos, ...daily, ...companion];
 const previousReactions = [...originalReactions, ...interactionReactions];
 const v4Reactions = [...previousReactions, ...bodyInteractionReactions];
 const v5Reactions = [...v4Reactions, ...personaReactions].map(item => ({ ...item, ...textRecommendations[item.id] }));
-const reactions = [...v5Reactions, ...miniSceneReactions];
+const v6Reactions = [...v5Reactions, ...miniSceneReactions];
+const playfulReactions: Reaction[] = [
+  {
+    ...reaction('wink-promise', '秘密只告诉你', '只告诉你', '俏皮暧昧', '😉', 'Give the viewer one deliberate friendly wink, lift one eyebrow and hold one index finger loosely beside the cheek as if sharing a small secret. Keep a closed-mouth playful smile and relaxed shoulders. Let the eye contact and hand gesture carry the entire beat.', ['秘密眨眼', '俏皮接话', '心动'], []),
+    compositionId: 'closeup', interactionId: 'observe', intensity: 2, intent: '用一个只有彼此懂的小表情接话，像偷偷分享好消息。', textMode: 'generated', captionStyleId: 'handwritten',
+  },
+  {
+    ...reaction('chin-challenge', '托腮等你接招', '敢接招吗', '俏皮暧昧', '😏', 'Rest the chin lightly on the back of one hand, with the other forearm resting on the near edge of a small plain table. Angle the head, raise one eyebrow and give a tiny confident smile as though inviting the viewer to a playful contest. Show connected wrists and relaxed shoulders, with the tabletop low enough to keep the gesture clear.', ['托腮', '小小挑衅', '等你回应'], []),
+    compositionId: 'halfbody', interactionId: 'comic', intensity: 2, intent: '邀请对方接梗或来比一比，小小得意又想等到回应。', textMode: 'overlay', captionStyleId: 'handwritten',
+  },
+  {
+    ...reaction('come-closer', '给你留一步距离', '过来一下', '俏皮暧昧', '🤍', 'Stand upright with both feet clearly visible, turn one shoulder slightly toward the viewer and extend one hand palm-up in a gentle invitation to join the character. Keep the other hand naturally at the side and a bright, slightly bashful smile. Use the complete small-body silhouette and open welcoming gesture to express the invitation.', ['邀请', '靠近一点', '全身'], []),
+    compositionId: 'fullbody', interactionId: 'approach', intensity: 1, intent: '想让对方坐近一点或一起做件小事，带一点害羞的邀请。', textMode: 'overlay', captionStyleId: 'bubble',
+  },
+  {
+    ...reaction('hidden-heart', '心意藏不住', '偷偷喜欢', '俏皮暧昧', '💛', 'Stand with the full body visible and both hands behind the back, hiding one small heart-shaped gift that peeks clearly beyond the side of the waist. Tilt the head away while looking back at the viewer with warm eyes and a restrained smile. One toe points shyly inward without twisting the legs; the conspicuous hidden gift reveals the affection.', ['藏礼物', '嘴硬心软', '无字也懂'], []),
+    compositionId: 'fullbody', interactionId: 'observe', intensity: 1, intent: '想送出心意却还在犹豫，藏着的小礼物已经替她说了。', textMode: 'none', captionStyleId: 'round',
+  },
+  {
+    ...reaction('whisper-peek', '凑过来讲悄悄话', '听我说', '俏皮暧昧', '🤫', 'Peek from behind one simple vertical edge with the head and one shoulder visible. Cup one naturally connected hand beside the mouth in a familiar whisper gesture, keep the lips in a small ordinary speaking shape and the eyes bright with friendly anticipation. Leave the opposite side mostly empty as the space for the listener.', ['悄悄话', '边缘探头', '小秘密'], []),
+    compositionId: 'peek', interactionId: 'observe', intensity: 1, intent: '邀请对方听一个小秘密，用悄悄靠近的动作带出亲近感。', textMode: 'none', captionStyleId: 'handwritten',
+  },
+  {
+    ...reaction('fan-fluster', '嘴硬藏进小扇子', '你犯规了', '俏皮暧昧', '🪭', 'Sit upright with the entire body, both shoes and neatly gathered legs visible. Hold one small plain hand fan just below the nose so the smiling eyes and bright blush remain clear. Peek sideways over the fan with raised inner brows as if a kind compliment has interrupted an attempt to stay composed. Keep the free hand relaxed on the lap and use a compact, ordinary seated pose.', ['被夸脸红', '小扇子', '嘴硬破功'], []),
+    compositionId: 'fullbody', interactionId: 'comic', intensity: 2, intent: '收到一句让人心动的夸奖，想装镇定却把脸红藏进小扇子。', textMode: 'generated', captionStyleId: 'comic',
+  },
+];
+const reactions = [...v6Reactions, ...playfulReactions];
 
 export const catalog: Catalog = {
   reactions,
@@ -277,7 +304,9 @@ export const catalog: Catalog = {
     { id: 'all56', name: '全部反应 56', description: '经典 48 张加上 8 张互动新作；自由组合强反应、幽默和安静可爱。建议先试少量。', reactionIds: previousReactions.map(item => item.id) },
     { id: 'all60', name: '全部反应 60', description: '保留前 56 张，再加 4 张半身与全身互动。每张都可自由修改构图、张力和文案。', reactionIds: v4Reactions.map(item => item.id) },
     { id: 'all64', name: '全部反应 64', description: '保留前 60 张，加上挑衅、露馅、小小得意与安静心软；文字路径可逐张调整，角色性格简要也可自由编辑。', reactionIds: v5Reactions.map(item => item.id) },
-    { id: 'all70', name: '全部反应 70', description: '完整保留原有 64 张，再加 6 个可开关的小处境；单张选择无字、后期字或随图生成，按角色性格自由组合。', reactionIds: reactions.map(item => item.id) },
+    { id: 'all70', name: '全部反应 70', description: '完整保留原有 64 张，再加 6 个可开关的小处境；单张选择无字、后期字或随图生成，按角色性格自由组合。', reactionIds: v6Reactions.map(item => item.id) },
+    { id: 'playful6', name: '俏皮暧昧 6', description: '秘密眨眼、托腮邀约、藏不住的心意与被夸破功；用眼神、手势和小道具传情，可逐张选择，文字也能关闭。', reactionIds: playfulReactions.map(item => item.id) },
+    { id: 'all76', name: '全部反应 76', description: '原有 70 张加上 6 张可选的俏皮暧昧；用日常反应、可爱互动和轻轻的心动自由搭配。', reactionIds: reactions.map(item => item.id) },
   ],
   sources: [
     { id: 'whale-static-2026', title: '2026 小鲸鱼 / DeepSeek 社区静态图案例', url: 'https://www.vgover.com/news/227900', checkedAt: '2026-09-09', evidence: '页面标注 2026-07-31；本次实际查看其中 5 张 JPEG 静态图，包括前景指向角色的手、仰脸叉腰的理直气壮反应、放大伸手与斜头半身，以及同一角色切换主客关系。提炼接触因果、近大远小和预期反转，不复制角色、画面或文字。摸头、软脸等新作是原创设计延伸；这些案例不能证明最高传播量或 QQ 使用排名。' },
