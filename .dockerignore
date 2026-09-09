@@ -1,0 +1,11 @@
+node_modules
+.npm-cache
+.git
+data
+.data
+artifacts
+dist
+.env
+.env.*
+*.zip
+*.log

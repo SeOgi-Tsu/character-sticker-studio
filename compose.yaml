@@ -1,0 +1,15 @@
+services:
+  studio:
+    build: .
+    ports:
+      - "127.0.0.1:4317:4317"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4317
+      DATA_DIR: /app/data
+      STUDIO_TOKEN: ${STUDIO_TOKEN:?Set STUDIO_TOKEN in .env before running Docker}
+    volumes:
+      - studio-data:/app/data
+    restart: unless-stopped
+volumes:
+  studio-data:

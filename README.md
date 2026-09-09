@@ -1,0 +1,98 @@
+# 绒绒工坊 · Character Sticker Studio
+
+从一句角色描述，到一整套属于你的可爱表情。
+
+独立运行的角色与静态表情创作 WebUI：角色卡、Niji 7 设定图提示词、参考母版、可选反应卡、云端批量生成、逐张重做、中文加字与 ZIP 导出。无需安装 VCP，也无需安装 Codex Skills。
+
+## 启动
+
+需要 Node.js **22.13 或以上**（使用 Node 内置 SQLite）。Windows、macOS、Linux 使用相同命令：
+
+```sh
+npm ci
+npm run build
+npm start
+```
+
+访问 [本地工坊](http://127.0.0.1:4317)。开发模式使用 `npm run dev`，前端端口为 5178。
+
+数据保存在 `data/`，配置、角色、图片与生成记录在重启后保留。整个源码目录可以独立移到其他位置。数据目录不包含在源码发布包中；迁移个人数据应停机后单独备份整个数据目录。
+
+## 第一次制作
+
+1. 在「角色」填写姓名、描述、性格与不可改变的外观特征，上传已有立绘。没有立绘时可用云端文生图或 Niji 提示词制作。
+2. 在「Niji 角色图」选择立绘、三视图或三视图＋大头细节。复制提示词到官方生成，选好图片后导回工坊。
+3. 选择 Q 版风格；可生成母版，也可直接上传已有 Q 版图。角色参考和 Q 版母版分别保存。
+4. 在「表情工坊」勾选反应卡，编辑动作与文案；先选少量动作验证画风，再生成整套。
+5. 在设置中填写云端供应商协议、Base URL、模型与 API Key。密钥仅保存在本机服务端，不进入前端构建或配方导出。
+6. 生成后可逐张查看、重做，添加文字并导出 PNG/ZIP。真实透明图保留透明通道；白底图明确作为白底处理。
+
+默认角色文字以 Margaret 为示例；开源源码不携带用户的私人角色立绘。没有参考图时页面会引导上传，未配置云端接口时不会伪造生成结果。
+
+## 什么是“流行可爱”
+
+内置反应卡是结合公开社区案例和聊天场景进行的**编辑精选**，不冒充 QQ 官方统计、全网热度榜或使用量排名。默认系列强调歪头、贴脸、鼓脸、探头、眼神死等清楚的小动作，用户可以换风格、文案和整套配方。
+
+完整来源和适用边界见 [调研记录](docs/RESEARCH.md)。案例用于理解情绪和表达方式，不内置搬运的菲比、塔菲或其他创作者图片。
+
+## 图片接口
+
+| 协议 | Base URL 示例 | 用途 |
+| --- | --- | --- |
+| OpenAI-compatible Images | `https://api.openai.com/v1` | `images/generations` 文生图；`images/edits` multipart 参考图生成 |
+| Gemini generateContent | `https://generativelanguage.googleapis.com/v1beta` | 文字＋内联参考图，解析图片响应 |
+
+模型名称可自由填写，需与你的供应商文档一致。相同的 Base URL 配置方式不表示每家服务都支持同样的模型、图片尺寸或参考图字段。第一版不把 Chat Completions 生图代理当成 Images 协议，也不把 Gemini Interactions 当成 generateContent 协议。
+
+一张表情对应一次图片请求。表情任务必须带角色参考图，优先使用选定的 Q 版母版。参考图失败会明确报错，不降级成可能换脸的纯文生图。请求提交后若网络断开、结果不明，任务进入「状态不明」，不会自动重复提交付费请求。手动重试会新增一个版本，旧结果仍保留。
+
+API Key 留空会保留现有密钥；更换服务地址或协议会清除旧密钥，避免误发给另一个服务。取消正在运行的任务属于尽力中止，无法保证供应商未计费。
+
+## Niji 7 的实际边界
+
+整合了角色功能、身份特征、服装、三视图、大头细节和风格的模板结构。参数根据当前 Niji 7 官方说明生成；默认不加入未确认的 `--oref`，也不使用 Niji 7 不支持的 `--cref`。Raw 和 Style Reference 可以选配。
+
+Niji 第一版是**官方生成后导回**的流程。Midjourney 没有面向普通开发者的通用开放 API，工坊不抓取账号 Cookie 或提供虚假的“官方自动生图”。
+
+- [Niji 7 官方介绍](https://nijijourney.com/blog/niji-7)
+- [Niji 7 提示指南](https://nijijourney.com/blog/niji-7-prompting)
+- [Midjourney API/自动化说明](https://docs.midjourney.com/hc/en-us/articles/32013696484109-Community-Guidelines)
+
+## ComfyUI 扩展
+
+第一版预留扩展设计，**未提供已经验证可运行的 ComfyUI 生成适配器**。接入需要 API 格式工作流、角色参考图上传/节点映射、prompt 与 seed 节点、模型文件和任务历史查询。接口计划见 [ComfyUI 接入说明](docs/COMFYUI_ADAPTER.md)。
+
+## Docker 与网站部署
+
+复制 `.env.example` 为 `.env`，设置一个足够长的 `STUDIO_TOKEN`，然后：
+
+```sh
+docker compose up --build -d
+```
+
+Docker 包含中文字体，默认通过 `127.0.0.1:4317` 访问。首次访问输入自己设置的工作室口令。自托管网站应在前面加 HTTPS 反向代理；服务端的允许来源/主机配置请见实际启动日志和 `server/index.ts`。
+
+这是个人工作室，不是多用户 SaaS。GitHub Pages 不能独自运行 SQLite、后台任务和保密 API Key；需要 Node/Docker 后端。移动端可以访问部署好的网页。
+
+## 导出与复现
+
+- 配方 JSON 保存角色、表情、动作与排版配置；导入时清除旧设备的本地图片 ID，重新选择参考图。
+- 图片 ZIP 包含 `originals/` 原图、`resized/` 指定尺寸无字图、可选 `captioned/` 有字 PNG、预览联系表和配方；每个表情选取最新的成功版本。
+- 存档记录提示词、供应商/模型及输出。云端模型升级或随机性可能改变重新生成的结果；保留母版与成品才能准确保留原画面。
+- PNG 尺寸属于工坊导出选项，不意味着已经满足 QQ 表情商城投稿要求。第一版为静态 PNG，尚无 GIF 动画生成。
+
+## 开发与验证
+
+```sh
+npm test
+npm run build
+node scripts/package-source.mjs
+```
+
+测试使用本地 HTTP 图片服务验证真实请求结构、持久化与错误处理，不消耗云端额度。具体已执行的检查及限制见 [验证记录](docs/VERIFICATION.md)。
+
+`scripts/package-source.mjs` 生成源代码 ZIP，使用明确的目录/文件清单；不包含 API Key、私人图片、data、node_modules 或 Git 历史。发布 GitHub 前可从该包创建仓库。
+
+## 授权
+
+本仓库新编写的代码采用 MIT。上传角色、生成图片、品牌标识和第三方依赖各自遵守其授权，不因代码许可证而改变。用户个人 Margaret 资产保存在忽略的 data 目录中，未加入开源源码。
