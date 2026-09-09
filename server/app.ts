@@ -73,7 +73,27 @@ export function createApp(options:AppOptions={}) {
   if(!stripAssets)for(const field of ['referenceAssetId','anchorAssetId'] as const){if(c[field]){const id=idText(c[field]);if(!store.get<Asset>('assets',id))fail('找不到角色参考图，请重新上传。');result[field]=id;}}
   return result;
  }
- function validateReaction(value:unknown,partial=false):Reaction|Partial<Reaction>{const r=object(value);const result:Record<string,unknown>={};for(const field of ['name','caption','category','action','emoji'])if(!partial||r[field]!==undefined)result[field]=text(r[field],'',field==='action'?3000:100);if(r.compositionId!==undefined){if(!catalog.compositions.some(c=>c.id===r.compositionId))fail('构图不存在，请选择已有构图。');result.compositionId=r.compositionId;}if(!partial){result.id=idText(r.id);result.tags=r.tags?stringArray(r.tags,20):[];}return result;}
+ function validateReaction(value:unknown,partial=false):Reaction|Partial<Reaction>{
+  const r=object(value),result:Record<string,unknown>={};
+  for(const field of ['name','caption','category','action','emoji']) {
+   if(!partial||r[field]!==undefined)result[field]=text(r[field],'',field==='action'?3000:100);
+  }
+  if(r.compositionId!==undefined){
+   if(!catalog.compositions.some(c=>c.id===r.compositionId))fail('构图不存在，请选择已有构图。');
+   result.compositionId=r.compositionId;
+  }
+  if(r.interactionId!==undefined){
+   if(!catalog.interactions.some(item=>item.id===r.interactionId))fail('互动方式不存在，请选择已有方式。');
+   result.interactionId=r.interactionId;
+  }
+  if(r.intensity!==undefined){
+   if(typeof r.intensity!=='number'||!Number.isInteger(r.intensity)||r.intensity<1||r.intensity>3)fail('张力强度需要选择 1、2 或 3。');
+   result.intensity=r.intensity;
+  }
+  if(r.intent!==undefined)result.intent=text(r.intent,'',160);
+  if(!partial){result.id=idText(r.id);result.tags=r.tags?stringArray(r.tags,20):[];}
+  return result;
+ }
  function validateProject(input:unknown,prior?:Project,stripAssets=false):Project{
   const p=object(input);const base=prior||newProject();
   const styleId=text(p.styleId,base.styleId,100);if(!catalog.styles.some(s=>s.id===styleId))fail('风格不存在。');
@@ -160,7 +180,7 @@ export function createApp(options:AppOptions={}) {
    const date=now();return {job:{id:randomUUID(),projectId,kind,reactionId,name:reaction?.name||(kind==='anchor'?'Q 版母版':'角色参考图'),prompt,status:'queued',createdAt:date,updatedAt:date,model:config.model,provider:config.provider},settings:structuredClone(config),referenceId,captionText:reaction?.caption};
   });res.status(201).json({jobs:saveBatch(key,signature,records)});
  });
- app.post('/api/jobs/import',(req,res)=>{const body=object(req.body);const project=getProject(idText(body.projectId)),asset=store.get<Asset>('assets',idText(body.assetId));if(!asset)fail('导入图片不存在。');const kind=body.kind;if(!['sticker','anchor','character'].includes(kind))fail('导入类型无效。');const reactionId=kind==='sticker'?idText(body.reactionId):undefined;const reaction=reactionId?getReaction(project,reactionId):undefined;const date=now();const job:Job={id:randomUUID(),projectId:project.id,kind,reactionId,name:text(body.name,reaction?.name||'外部导入',100),prompt:text(body.provenance,'外部导入图片',4000),status:'succeeded',asset,createdAt:date,updatedAt:date,model:'imported',provider:'imported'};store.put('jobs',job.id,{job,captionText:reaction?.caption});res.status(201).json(job);});
+ app.post('/api/jobs/import',(req,res)=>{const body=object(req.body);const project=getProject(idText(body.projectId)),asset=store.get<Asset>('assets',idText(body.assetId));if(!asset)fail('导入图片不存在。');const kind=body.kind;if(!['sticker','anchor','character'].includes(kind))fail('导入类型无效。');const reactionId=kind==='sticker'?idText(body.reactionId):undefined;const reaction=reactionId?getReaction(project,reactionId):undefined;const date=now();const job:Job={id:randomUUID(),projectId:project.id,kind,reactionId,name:text(body.name,reaction?.name||'外部导入',100),prompt:text(body.provenance,'外部导入图片',20000),status:'succeeded',asset,createdAt:date,updatedAt:date,model:'imported',provider:'imported'};store.put('jobs',job.id,{job,captionText:reaction?.caption});res.status(201).json(job);});
  app.post('/api/jobs/:id/cancel',(req,res)=>{const record=getStoredJob(String(req.params.id));if(record.job.status==='queued')updateJob(record,record.job.remoteTaskId?{status:'unknown',error:'已停止本地查询；远程任务可能仍在生成或计费。'}:{status:'cancelled',error:'已取消，未提交给图片服务。'});else if(record.job.status==='running'){active.get(record.job.id)?.abort();updateJob(record,{status:'unknown',error:'已停止本地等待；服务商可能仍在生成或计费，请先核对记录。'});}res.json(record.job);});
  app.post('/api/jobs/:id/resume',(req,res)=>{
   const record=getStoredJob(String(req.params.id));

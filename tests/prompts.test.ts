@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { catalog } from '../src/shared/catalog.ts';
 import { buildAnchorPrompt, buildCharacterPrompt, buildNijiPrompt, buildStickerPrompt } from '../src/shared/prompts.ts';
-import type { Character } from '../src/shared/types.ts';
+import type { Character, Reaction } from '../src/shared/types.ts';
 
 const character: Character = {
   name: 'Margaret', description: '会认真听你说话、偶尔嘴硬的伙伴',
@@ -12,7 +12,7 @@ const character: Character = {
 };
 
 test('catalog packs resolve to unique, selectable reactions with clear provenance', () => {
-  assert.ok(catalog.reactions.length >= 36 && catalog.reactions.length <= 48);
+  assert.equal(catalog.reactions.length, 56);
   assert.equal(new Set(catalog.reactions.map(item => item.id)).size, catalog.reactions.length);
   assert.equal(catalog.styles.length, 3);
   const sourceIds = new Set(catalog.sources.map(item => item.id));
@@ -60,14 +60,68 @@ test('every reaction can change while the chosen style stays identical', () => {
 test('mixed starter pack changes framing and silhouette while retaining all existing reactions', () => {
   const pack = catalog.packs.find(item => item.id === 'mixed12');
   assert.ok(pack, 'a varied starter pack must be selectable');
-  assert.equal(catalog.packs[0].id, 'mixed12');
   assert.equal(pack.reactionIds.length, 12);
   const chosen = pack.reactionIds.map(id => catalog.reactions.find(item => item.id === id)!);
   assert.ok(new Set(chosen.map(item => item.compositionId)).size >= 6);
   assert.ok(chosen.filter(item => item.compositionId === 'closeup').length <= 3);
-  assert.equal(catalog.reactions.length, 48, 'old project reaction IDs stay usable');
+  assert.equal(catalog.packs.find(item => item.id === 'all48')!.reactionIds.length, 48, 'the original complete pack keeps its recipe');
   const compositionIds = new Set(catalog.compositions.map(item => item.id));
   for (const reaction of catalog.reactions) assert.ok(compositionIds.has(reaction.compositionId!), reaction.id);
+});
+
+test('interaction starter combines new visual gags, old favorites and quiet beats', () => {
+  const pack = catalog.packs.find(item => item.id === 'interaction12');
+  assert.ok(pack);
+  assert.equal(catalog.packs[0].id, 'interaction12');
+  assert.equal(pack.reactionIds.length, 12);
+  const originalIds = catalog.packs.find(item => item.id === 'all48')!.reactionIds;
+  assert.equal(pack.reactionIds.filter(id => !originalIds.includes(id)).length, 8);
+  const chosen = pack.reactionIds.map(id => catalog.reactions.find(item => item.id === id)!);
+  assert.ok(new Set(chosen.map(item => item.compositionId)).size >= 6);
+  assert.ok(chosen.filter(item => item.compositionId === 'closeup').length <= 3);
+  assert.ok(new Set(chosen.map(item => item.interactionId ?? 'observe')).size >= 5);
+  assert.ok(chosen.some(item => item.intensity === 1), 'quiet beats balance dramatic gestures');
+  assert.ok(chosen.some(item => item.intensity === 3), 'dramatic gestures are available');
+  for (const item of chosen.filter(item => !originalIds.includes(item.id))) {
+    assert.ok(item.intent && item.intent.length > 8, item.id);
+    assert.ok(item.interactionId, item.id);
+  }
+});
+
+test('viewer-contact prompt permits one clearly connected hand without blanket margin prohibitions', () => {
+  const reaction = { ...catalog.reactions[0], interactionId: 'squish', intensity: 3, compositionId: 'closeup' } as Reaction;
+  const prompt = buildStickerPrompt(character, reaction, catalog.styles[0]);
+  assert.match(prompt, /one anonymous viewer hand/i);
+  assert.match(prompt, /contact point/i);
+  assert.match(prompt, /not an extra arm belonging to the character/i);
+  assert.doesNotMatch(prompt, /no extra hands|all intentionally visible.*must stay inside|safe margin around the whole|generous margins/i);
+  assert.match(prompt, /one dominant visual joke/i);
+  assert.match(prompt, /eyes and mouth.*readable/i);
+});
+
+test('observation and legacy recipes never require a viewer hand or a lens approach', () => {
+  const reaction = { ...catalog.reactions.find(item => item.id === 'blanket')!, interactionId: 'observe', intensity: 1 } as Reaction;
+  for (const candidate of [reaction, { ...reaction, interactionId: undefined, intensity: undefined }]) {
+    const prompt = buildStickerPrompt(character, candidate, catalog.styles[0]);
+    assert.match(prompt, /Observation mode/i);
+    assert.match(prompt, /do not introduce an off-screen viewer hand/i);
+    assert.doesNotMatch(prompt, /add one anonymous viewer hand|reach into the viewer|mandatory close-up/i);
+    assert.ok(prompt.includes(catalog.compositions.find(item => item.id === 'scene')!.prompt));
+  }
+});
+
+test('interaction and intensity respect selected wide staging and do not replace identity', () => {
+  const reaction = { ...catalog.reactions.find(item => item.id === 'hug')!, interactionId: 'approach', intensity: 3, compositionId: 'fullbody', intent: '看到冲过来的小伙伴，想张开手接住她。' } as Reaction;
+  const prompt = buildStickerPrompt(character, reaction, catalog.styles[0]);
+  assert.ok(prompt.includes(character.identity));
+  assert.ok(prompt.includes(reaction.intent!));
+  assert.match(prompt, /Full-body wide framing/i);
+  assert.match(prompt, /selected staging has priority over interaction/i);
+  assert.match(prompt, /dramatic.*foreshortening/i);
+  assert.doesNotMatch(prompt, /face must fill|deliberately crop.*feet|mandatory close-up/i);
+  const calm = buildStickerPrompt(character, { ...reaction, intensity: 1 }, catalog.styles[0]);
+  assert.match(calm, /gentle.*natural proportions/i);
+  assert.doesNotMatch(calm, /Dramatic intensity/i);
 });
 
 test('whole-body and prone reactions require complete bodies instead of the portrait default', () => {

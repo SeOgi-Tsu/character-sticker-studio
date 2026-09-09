@@ -1,14 +1,28 @@
-import type { Catalog, Composition, CompositionId, Reaction } from './types.ts';
+import type { Catalog, Composition, CompositionId, Interaction, Reaction } from './types.ts';
 
 export const compositions: Composition[] = [
-  { id: 'closeup', name: '贴脸特写', description: '脸与小手占主体，保留完整发饰；用眼神和脸颊传达情绪。', prompt: 'Close-up framing: the complete head and expressive hands occupy about 75% of the canvas, with only a little shoulder visible. Eye-level camera, readable face acting, all hair ornaments within the safe margin. Deliberately crop below the shoulders; this is the selected close-up, not the default for the other stickers.' },
-  { id: 'halfbody', name: '半身互动', description: '镜头退到腰间，双臂和身体倾斜都看得见；适合抱抱、拒绝、挥手。', prompt: 'Waist-up medium framing: show the head, shoulders, entire arms and waist, with the character occupying about 65% of the canvas height. Let the arm gesture and torso lean create the silhouette. Keep both hands visible and the head clearly smaller in the frame than a face close-up.' },
-  { id: 'fullbody', name: '全身姿态', description: '完整露出身体与双脚，蹲坐、鞠躬、垂头都有自己的剪影。', prompt: 'Full-body wide framing: show the entire body from hair tips to both feet, including every limb, at about 60% of the canvas height with airy space around it. Camera observes the complete requested pose from a readable three-quarter angle. The body silhouette carries the reaction; not a portrait, no bust crop, no hidden legs.' },
+  { id: 'closeup', name: '贴脸特写', description: '让脸颊、眼神或触碰点成为主角；可贴边、轻微变形，关键特征仍清楚。', prompt: 'Close-up framing: the face and action-defining gesture occupy about 80–92% of the canvas, with only a little shoulder visible. Choose eye-level or a slight high/low camera angle that makes this emotion readable. Preserve recognizable identity details; the shoulders and trailing hair may deliberately run beyond an edge, but protect the eyes, mouth and contact point. This is the selected close-up, not the default for other stickers.' },
+  { id: 'halfbody', name: '半身互动', description: '看到腰间和双臂，靠近的小手可以透视放大；让身体真的朝你伸过来。', prompt: 'Waist-up medium framing: show the head, shoulders, arms and waist, with the character occupying about 65–85% of the canvas height. Let the arm gesture and torso lean create the silhouette. Preserve readable limb connections; a reaching hand may be larger in the foreground while the waist remains visible. Keep the head clearly smaller in the frame than a face close-up.' },
+  { id: 'fullbody', name: '全身姿态', description: '完整露出身体与双脚；小小一只的反差、蹲坐和鞠躬都能讲清情绪。', prompt: 'Full-body wide framing: show the entire body from hair tips to both feet, including every limb, at about 35–70% of the canvas height. Use the smaller end for a deliberately tiny scale joke and the larger end for a readable complete pose. Camera observes the requested pose from a clear three-quarter angle. The body silhouette carries the reaction; not a portrait, no bust crop, no hidden legs.' },
   { id: 'action', name: '夸张全身动作', description: '跑、跳、打滚或趴地，以完整肢体和方向线传达动作；横向姿势也成立。', prompt: 'Action-wide framing: show the whole body and every limb in the requested frozen action, including hands and feet. The pose occupies roughly 70% along its longest axis; allow horizontal, diagonal or curled silhouettes instead of forcing an upright figure. Use a readable side or three-quarter camera matching the action and leave space in its direction. The full-body gesture is the focus; not a portrait, no bust crop, no cropped feet.' },
-  { id: 'prop', name: '道具互动', description: '花、抱枕、饭碗或桌面参与动作，角色和道具共同组成形状。', prompt: 'Prop-interaction framing: frame the character and the one action-defining prop together as a single readable unit, occupying about 65% of the canvas. Show the hands contacting or holding the prop and enough torso to explain the action. The prop is clearly readable at chat size, about 20–35% of the unit where appropriate; it is not merely a tiny accessory below a giant portrait. Keep the eyes visible.' },
+  { id: 'prop', name: '道具互动', description: '道具能当主角：把大花递到面前，或让小身体努力抱住；接触与大小反差清楚。', prompt: 'Prop-interaction framing: frame the character and one action-defining prop together as a readable unit, occupying about 70–88% of the canvas. Show the hands contacting or holding the prop and enough torso to explain the action. The prop may occupy 25–60% of the unit when an oversized gift or scale contrast is the joke. Use foreground depth for an offering, never let the prop conceal the eyes and mouth.' },
   { id: 'scene', name: '迷你情境', description: '被窝、电脑等一处小环境；缩小人物，留出空间讲清“正在干什么”。', prompt: 'Mini-scene wide framing: show one character within only the minimal setting directly needed by the action, such as a blanket nook or tiny workstation. The entire isolated scene occupies about 70% of the canvas, while the character occupies about 40–50% of the canvas height. Let the posture, object relationship and negative space explain the situation. No scenic room background, no extra characters, not a portrait; keep all setting pieces inside the canvas.' },
-  { id: 'peek', name: '边缘探头', description: '人物偏到左边或右边，从遮挡物后探出来；另一侧大胆留白。', prompt: 'Asymmetric edge-peek framing: place the character at the left or right third behind the single simple occluding object described in the action, leaving the opposite half mostly empty. Show the complete head, an expressive gripping hand and only the intentionally revealed part of the body. Keep the occluder and all visible hair inside the safe margin. The body may be hidden behind the object; do not center or enlarge the face to fill the canvas.' },
+  { id: 'peek', name: '边缘探头', description: '从画面边缘歪着挤进来，目光落向你；留白和贴边形成突然出现的互动。', prompt: 'Asymmetric edge-peek framing: place the character at the left or right third, leaning around the single simple occluding object described in the action, leaving the opposite half mostly empty. Use a tilted head, one gripping hand and the intentionally revealed body part. The occluder or trailing hair may meet the canvas edge; keep facial features and the gripping contact clear. The body may be hidden behind the object. Keep the asymmetric layout instead of centering the face.' },
 ];
+
+export const interactions: Interaction[] = [
+  { id: 'observe', name: '自在反应', description: '靠姿态、眼神和反差接梗，也保留安静可爱的停顿；不添加对方的手。', prompt: 'Observation mode: let the viewer recognize the character’s own reaction through posture, eyes and timing. A glance toward the viewer is allowed, but do not invent physical contact or a lens approach. Do not introduce an off-screen viewer hand.' },
+  { id: 'approach', name: '扑向你', description: '身体和小手朝观众靠近；用前后大小差表达“来抱一下”，景别仍由你选择。', prompt: 'Approach mode: direct the character’s gesture toward the viewer, with a clear near-to-far relationship between a reaching hand, face and torso. Use inviting eye contact or a delighted closed-eye smile according to the action. At wider staging preserve the complete requested body and express the approach through lean, diagonal motion and hand depth. No off-screen viewer hand is needed.' },
+  { id: 'offer', name: '递给你', description: '花、心或小礼物伸到面前；道具承担互动，一眼看懂“这是给你的”。', prompt: 'Offering mode: make the one offered object lead toward the viewer with the character’s connected hands behind it. Use purposeful size contrast and clear depth without covering the eyes or mouth; the expression answers the implied recipient. Retain the selected camera distance and fit the offering within that staging. Do not add a recipient hand.' },
+  { id: 'touch', name: '摸摸贴贴', description: '摸头、贴屏或轻轻碰一下；谁在碰、碰在哪里清楚，表情对接触有回应。', prompt: 'Gentle-contact mode: show one clear contact point and a visible soft reaction to it, such as lowered shoulders, a tilted cheek or relaxed eyelids. If the action needs the viewer to touch the character, permit at most one anonymous viewer hand entering from an edge, with its wrist visibly continuing out of frame. That hand is not an extra arm belonging to the character. For the character touching an implied screen or reaching to pat the viewer, use the character’s own connected limb and omit an incoming hand. Do not invent another person or face.' },
+  { id: 'squish', name: '软脸压扁', description: '轻捏一侧脸颊、软乎乎压扁；变形要有接触原因，嘴硬和舒服都能很可爱。', prompt: 'Soft-squish mode: make a gentle contact point visibly cause rounded cheek compression or a soft elastic body response. When an external touch is required, permit at most one anonymous viewer hand entering from an edge; show a coherent thumb/finger or palm contact and a wrist continuing out of frame. It is not an extra arm belonging to the character. Keep the deformation playful and painless, with the eyes and mouth still readable and the identity recognizable. If the action uses the character’s own hands or an implied screen, omit the viewer hand.' },
+  { id: 'comic', name: '反差发癫', description: '小身体大自信、突然扁掉、一本正经犯傻；一个鲜明笑点就够。', prompt: 'Visual-comedy mode: build one dominant visual joke from the action, such as a tiny proud body, exaggerated collapse or calm eyes paired with an absurd silhouette. Favor asymmetry, pose contrast and precisely held comic timing; do not turn every joke into huge sparkling eyes. Keep the selected composition and use negative space when small scale is the joke. No extra hand or unrelated prop is required.' },
+];
+
+// Missing fields in an imported recipe preserve the earlier standalone action.
+export function getInteraction(reaction: Pick<Reaction, 'interactionId'>): Interaction {
+  return interactions.find(item => item.id === reaction.interactionId) ?? interactions[0];
+}
 
 const reactionCompositions: Record<string, CompositionId> = {
   waao: 'closeup', 'head-tilt': 'halfbody', peek: 'peek', 'puffed-cheeks': 'closeup',
@@ -23,6 +37,9 @@ const reactionCompositions: Record<string, CompositionId> = {
   welcome: 'halfbody', 'proud-of-you': 'prop', victory: 'action', cheer: 'prop',
   waiting: 'fullbody', lurking: 'peek', 'tea-time': 'prop', ready: 'fullbody',
   sulking: 'fullbody', 'blown-away': 'action', blanket: 'scene', busy: 'scene',
+  'hug-lunge': 'halfbody', 'receive-headpat': 'halfbody', 'flower-delivery': 'prop',
+  'corner-check': 'peek', 'cheek-pinch': 'closeup', 'tiny-boss': 'fullbody',
+  'instant-pancake': 'action', 'heart-window': 'closeup',
 };
 
 // Older projects have no staging field. Resolve their stable reaction IDs to
@@ -98,24 +115,64 @@ const companion: Reaction[] = [
   reaction('busy', '小手正在忙', '稍等一下', '陪伴营业', '💻', 'Sit sideways on a tiny stool at one low desk with a plain open laptop, both hands reaching to the keyboard and feet dangling below. Turn toward the viewer with focused gentle eyes and one sweat drop while keeping the torso angled toward the desk.', ['忙碌', '等下', '开工']),
 ];
 
-const reactions = [...cute, ...chaos, ...daily, ...companion];
+const interactionReactions: Reaction[] = [
+  {
+    ...reaction('hug-lunge', '接住这只小可爱', '接住我！', '可爱犯规', '🫂', 'Throw both arms open toward the viewer with the nearer mitten-like hand leading, tilt the torso diagonally into an eager hug and let the elbows connect clearly back to the shoulders. Squeeze the eyes into delighted crescents and open a joyful small mouth, as if the recipient has just appeared.', ['扑抱', '接住', '近大远小'], ['whale-static-2026'], true),
+    interactionId: 'approach', intensity: 3, intent: '久等的人出现了，兴奋地扑过去；让接收者下意识想伸手接住。',
+  },
+  {
+    ...reaction('receive-headpat', '摸一下就乖了', '再摸一下', '可爱犯规', '🫳', 'Receive a gentle head pat from one anonymous viewer hand resting softly on the crown. Tip the head into the palm, lower both shoulders and let the character’s own hands hang loosely near the chest. Close the eyes into uneven relaxed arcs with a tiny contented smile; flatten only the hair directly under the palm.', ['摸头', '被安慰', '舒服'], [], true),
+    interactionId: 'touch', intensity: 2, intent: '刚才还在嘴硬，被轻轻摸头就放松下来；适合安慰后撒娇求继续。',
+  },
+  {
+    ...reaction('flower-delivery', '整朵喜欢都给你', '这朵给你', '可爱犯规', '🌼', 'Offer one comically oversized simple flower eagerly toward the viewer, holding its short thick stem with both connected hands. Brace the shoulders behind the gift and tilt the smiling face to one side of the petals, keeping both eyes and the mouth visible. Make the single bloom much larger than the small hands; the effort of presenting it is the joke.', ['送花', '大礼物', '直球'], [], true),
+    interactionId: 'offer', intensity: 3, intent: '想认真夸夸或表达喜欢，把一大朵心意直接递到对方面前。',
+  },
+  {
+    ...reaction('corner-check', '歪进来查岗', '在想我吗', '可爱犯规', '👀', 'Lean sideways around a small rounded vertical panel, grip its edge with one hand and tip the head almost horizontally into the open space. Raise one curious eyebrow, keep the other eyelid half lowered and make a tiny knowing smile, looking directly at the viewer as if catching them secretly smiling.', ['探头', '查岗', '欠欠的'], [], true),
+    interactionId: 'approach', intensity: 2, intent: '安静的群聊里突然探出来，带一点被发现了的俏皮互动，邀请对方回话。',
+  },
+  {
+    ...reaction('cheek-pinch', '脸软嘴还硬', '不许捏啦', '可爱犯规', '🥟', 'Let one anonymous viewer hand gently press and pinch just one rounded cheek between a thumb and finger, shifting the soft cheek inward into a visible squishy fold. Tilt the face away slightly while the eyes glance back sideways, one brow raised and the other stubbornly lowered. Make the tiny mouth an off-center pout; the character’s own two hands rest below the chin.', ['软脸', '嘴硬', '接触变形'], [], true),
+    interactionId: 'squish', intensity: 3, intent: '关系熟悉时轻轻逗一下：脸颊很软，表情还在努力抗议，接住打趣。',
+  },
+  {
+    ...reaction('tiny-boss', '小小一只超有理', '我就有理', '可爱犯规', '😤', 'Stand as a deliberately tiny compact figure, plant both little feet firmly apart and place both hands on the waist with elbows sticking out. Lift the chin much too proudly for such a small body, use narrow unimpressed eyes, asymmetrically puff one cheek and hold a stubborn tiny mouth. The joke is the contrast between the miniature body and enormous self-confidence; no prop is needed.', ['小小一只', '理直气壮', '反差'], ['whale-static-2026'], true),
+    interactionId: 'comic', intensity: 2, intent: '被吐槽时依然理直气壮；用小小身体和超大自信的反差，让对方笑出来。',
+  },
+  {
+    ...reaction('instant-pancake', '啪叽变成一张', '啪叽', '可爱犯规', '🫠', 'Collapse belly-down into a comically flattened soft pancake-like silhouette, with both arms stretched loosely ahead and both small feet turned outward behind. Rest one cheek on the floor, use calm half-lidded eyes and a tiny straight mouth as though this absurd collapse were perfectly normal. Keep the hair ornaments and outfit color blocks readable within the horizontal shape.', ['啪叽', '摆烂', '一本正经发癫'], [], true),
+    interactionId: 'comic', intensity: 3, intent: '累了、被可爱击中或事情太离谱时，直接啪叽倒下，用平静的脸制造笑点。',
+  },
+  {
+    ...reaction('heart-window', '安静贴你一下', '贴一下', '可爱犯规', '💕', 'Rest one soft cheek and the character’s own open palm against an implied clear screen, with a slight cheek flattening at the contact and a naturally connected bent wrist. Close the eyes peacefully, keep a tiny relaxed smile and let the other hand rest on the chest. Use no incoming viewer hand, no glass border, no reflections and no extra props; the gentle shared pause is the whole feeling.', ['贴屏', '安心', '安静陪伴'], [], true),
+    interactionId: 'touch', intensity: 1, intent: '不用热闹地说什么，安静靠过来陪一下；适合晚安、安心或缓和气氛。',
+  },
+];
+
+const originalReactions = [...cute, ...chaos, ...daily, ...companion];
+const reactions = [...originalReactions, ...interactionReactions];
 
 export const catalog: Catalog = {
   reactions,
   compositions,
+  interactions,
   styles: [
     { id: 'cream-chibi', name: '奶油精致 Q 版', description: '软软圆脸、细腻眼睛、干净赛璐璐。想可爱，也想一眼认出是你。', color: '#F6D9AB', prompt: 'Refined 2D anime chibi illustration, roughly two-head-tall base design with pose-driven squash and stretch, soft round cheeks, expressive detailed eyes, clean chocolate-brown linework, restrained crisp cel shading, warm cream highlights and soft peach blush. Retain the character’s exact hair, eye and outfit colors; cream is a lighting accent, not a recoloring instruction. Consistent drawing finish across varied body silhouettes, polished compact sticker finish.' },
     { id: 'cheeky-bighead', name: '欠欠大头反应', description: '大脑袋、小短腿、表情放大；全身也能很欠很可爱。', color: '#F3B6BE', prompt: 'Playful 2D big-head reaction sticker, roughly one-and-a-half-head-tall base design with expressive squash and stretch, oversized wide rounded face, tiny compact torso and mitten-like hands, bold clean dark outline, simple flat cel colors, exaggerated brows and mouth, expressive eyes preserving their original color. Soft coral blush as a small accent, mischievous comic timing, original character design. Big-head describes anatomy, not a mandatory close-up camera; framing follows the selected staging.' },
     { id: 'blob-doodle', name: '糯米团子简笔', description: '团成一颗、几笔就懂。动作夸张，缩成聊天小图也清楚。', color: '#C9D7BB', prompt: 'Minimal hand-drawn 2D blob chibi sticker, compact bean-shaped body, very large rounded head, tiny stubby limbs, slightly organic dark brown contour, flat colors with almost no shading, simplified readable eyes and mouth. Preserve the exact hair silhouette, eye color, key accessories and the outfit’s main color blocks. Soft sage accents used only for small decorative marks; high legibility at small chat size, consistent line weight.' },
   ],
   packs: [
+    { id: 'interaction12', name: '可爱犯规 12', description: '扑抱、摸头、递大花、软脸和理直气壮的小小一只；强互动穿插安静陪伴，7 种构图。原创编辑精选，非使用量排名。', reactionIds: ['hug-lunge', 'receive-headpat', 'flower-delivery', 'corner-check', 'cheek-pinch', 'tiny-boss', 'instant-pancake', 'heart-window', 'waao', 'rolling', 'blanket', 'thanks'] },
     { id: 'mixed12', name: '百变可爱 12', description: '从贴脸到全身，从跑跳到被窝：7 种构图交错，先试这套。编辑精选，非热度排名。', reactionIds: ['waao', 'hug', 'running', 'peek', 'flower', 'low-battery', 'desk-bang', 'blanket', 'victory', 'rolling', 'puffed-cheeks', 'busy'] },
     { id: 'cute12', name: '贴脸可爱 12', description: '偏好大头和软萌互动时选这套，也穿插半身、跪坐和道具。不是使用量排行榜。', reactionIds: cute.map(item => item.id) },
     { id: 'chaos12', name: '群聊发疯 12', description: '眼神死、假哭、拍桌、蠕动；一眼能接住情绪的反应精选。', reactionIds: chaos.map(item => item.id) },
     { id: 'daily24', name: '日常好用 24', description: '在可爱和群聊反应里加入收到、谢谢、干饭、没电；编辑按聊天场景配齐。', reactionIds: ['waao', 'head-tilt', 'peek', 'puffed-cheeks', 'cling', 'hug', 'puppy-eyes', 'flower', 'deadpan', 'fake-cry', 'stunned', 'cant-stop-laughing', ...daily.map(item => item.id)] },
-    { id: 'all48', name: '完整反应库 48', description: '四类全选；每张仍可取消、修改动作和文案，建议先试少量再批量。', reactionIds: reactions.map(item => item.id) },
+    { id: 'all48', name: '经典反应库 48', description: '保留原有四类和完整配方；每张仍可修改构图、互动与文案。', reactionIds: originalReactions.map(item => item.id) },
+    { id: 'all56', name: '全部反应 56', description: '经典 48 张加上 8 张互动新作；自由组合强反应、幽默和安静可爱。建议先试少量。', reactionIds: reactions.map(item => item.id) },
   ],
   sources: [
+    { id: 'whale-static-2026', title: '2026 小鲸鱼 / DeepSeek 社区静态图案例', url: 'https://www.vgover.com/news/227900', checkedAt: '2026-09-09', evidence: '页面标注 2026-07-31；本次实际查看其中 5 张 JPEG 静态图，包括前景指向角色的手、仰脸叉腰的理直气壮反应、放大伸手与斜头半身，以及同一角色切换主客关系。提炼接触因果、近大远小和预期反转，不复制角色、画面或文字。摸头、软脸等新作是原创设计延伸；这些案例不能证明最高传播量或 QQ 使用排名。' },
     { id: 'phoebe-hub', title: 'Phoebe Hub · 菲比社区表情样本', url: 'https://kato-shoko705.github.io/Phoebe-Hub/', checkedAt: '2026-09-08', evidence: '公开社区库及搜索索引可见 2026 年 6–7 月的跑步、蹦跶、坐姿、被窝、干饭、抱星、捏脸等静态和动态条目。用于策划身体姿态、道具和情境的变化，不仅替换脸部。站内“最热”不能代表 QQ 使用量，页面依赖脚本，未声称核实实时总数或排名。' },
     { id: 'taffy-official', title: '永雏塔菲本人 · 35 张表情包发布', url: 'https://www.bilibili.com/opus/648285615126740998', checkedAt: '2026-09-08', evidence: '2022-04-12 的本人发布页面；本次实际查看了“散步”的完整肢体剪影，以及“嗯打游戏”的手柄、屏幕与半身关系。用于理解同一画风里改变景别、姿态和道具的做法。这是历史视觉参考，不是 2026 热度证据；本项目没有复制或打包原图。' },
     { id: 'taffy-2026', title: '塔菲表情包分享 · 2026 年社区案例', url: 'https://www.bilibili.com/video/BV18zzkBPEwR/', checkedAt: '2026-09-08', evidence: '创作者于 2026-01-24 发布个人收藏分享，说明这类角色表情仍有整理与传播活动。收藏规模属于作者自述，视频互动不等于表情使用频次；未据此给具体反应排名。' },

@@ -1,13 +1,19 @@
 import { useState } from 'react';
 import { ArrowDownToLine, ChevronDown, ChevronUp, Eye, Heart, RotateCcw, Sparkles, Type, WandSparkles } from 'lucide-react';
-import type { Caption, Composition, Job, Reaction } from '../shared/types';
+import type { Caption, Composition, Interaction, Intensity, Job, Reaction } from '../shared/types';
 import { canResumeJob } from '../lib/jobs';
 import { Field, Status } from './Common';
 
 export function defaultCaption(reaction: Reaction): Caption { return { text: reaction.caption, enabled: true, color: '#ffffff', stroke: '#382537', position: 'bottom', fontSize: 52 }; }
 
-export default function StickerInspector({ reaction, compositions, caption, job, onReaction, onCaption, onGenerate, onRetry, onResume, onDownload, onPreview, busy, dirty, revision }: {
-  reaction?: Reaction; compositions: Composition[]; caption?: Caption; job?: Job;
+const intensityOptions: { value: Intensity; label: string; description: string }[] = [
+  { value: 1, label: '轻轻的', description: '动作克制，留一点安静和害羞。' },
+  { value: 2, label: '心动一下', description: '情绪鲜明，接触和动作一眼能懂。' },
+  { value: 3, label: '可爱犯规', description: '夸张透视与表演，把可爱或笑点推到最前面。' },
+];
+
+export default function StickerInspector({ reaction, compositions, interactions = [], caption, job, onReaction, onCaption, onGenerate, onRetry, onResume, onDownload, onPreview, busy, dirty, revision }: {
+  reaction?: Reaction; compositions: Composition[]; interactions?: Interaction[]; caption?: Caption; job?: Job;
   onReaction: (value: Partial<Reaction>) => void; onCaption: (value: Caption) => void;
   onGenerate: () => void; onRetry: (job: Job) => void; onResume: (job: Job) => void; onDownload: (job: Job) => void;
   onPreview: (job: Job) => void; busy: boolean; dirty: boolean; revision: string;
@@ -17,14 +23,21 @@ export default function StickerInspector({ reaction, compositions, caption, job,
   const [showPrompt, setShowPrompt] = useState(false);
   if (!reaction) return <aside className="inspector empty-inspector"><Sparkles size={28} /><h3>给表情一点个性</h3><p>点开任意卡片，修改动作和文字。</p></aside>;
   const text = caption ?? defaultCaption(reaction);
+  const interaction = interactions.find(item => item.id === (reaction.interactionId || 'observe'));
+  const intensity = reaction.intensity || 2;
   return <aside id="sticker-inspector" className="inspector"><div className="inspector-header"><span className="eyebrow">A LITTLE MORE YOU</span><span className="tiny-label">单张编辑</span></div>
     <div className="inspector-title"><h2>{reaction.name}</h2><span className="reaction-category">{reaction.category}</span></div>
     <div className={`chat-preview ${dark ? 'dark' : ''}`}><span className="preview-label">CHAT PREVIEW / {previewSize}px</span><div className="chat-bubble">{job?.asset ? <button className="mini-preview" style={{ width: previewSize, height: previewSize }} onClick={() => onPreview(job)} aria-label="放大查看表情"><img src={!dirty ? `/api/jobs/${job.id}/render?size=512&caption=1&v=${encodeURIComponent(revision)}` : job.asset.url} alt={reaction.name} />{dirty && text.enabled && <span className={`local-caption ${text.position}`} style={{ color: text.color, WebkitTextStroke: `${Math.max(1, text.fontSize / 35)}px ${text.stroke}`, fontSize: text.fontSize * previewSize / 512 }}>{text.text}</span>}</button> : <div className="pre-generation-preview" style={{ width: previewSize, minHeight: previewSize }}><Heart size={27} strokeWidth={1.5} /><strong>{text.text || reaction.name}</strong><small>动作方案 · 尚未生成</small></div>}</div><div className="preview-controls"><div className="segmented small"><button className={previewSize === 96 ? 'active' : ''} onClick={() => setPreviewSize(96)}>96px</button><button className={previewSize === 160 ? 'active' : ''} onClick={() => setPreviewSize(160)}>160px</button></div><button className={`background-dot ${dark ? 'selected' : ''}`} aria-label={dark ? '切换浅色背景' : '切换深色背景'} onClick={() => setDark(!dark)} /></div></div>
     {job && <div className="inspector-job-state"><Status status={job.status} />{job.asset && <span>{job.asset.hasAlpha ? '含 Alpha' : '实色背景'}</span>}</div>}
     {dirty && job?.asset && <p className="field-hint preview-save-hint">文字为编辑预览，保存后更新实际排字。</p>}
     <Field label="表情名称"><input value={reaction.name} maxLength={80} onChange={e => onReaction({ name: e.target.value })} /></Field>
-    <Field label="构图与表演" hint={compositions.find(item => item.id === (reaction.compositionId || 'halfbody'))?.description || '旧配方默认半身，可自由切换。'}><select value={reaction.compositionId || 'halfbody'} onChange={e => onReaction({ compositionId: e.target.value as Reaction['compositionId'] })}>{compositions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-    {job?.asset && <p className="field-hint composition-edit-hint">构图与动作修改在下次生成时生效，已有成品保留。</p>}
+    <Field label="镜头构图" hint={compositions.find(item => item.id === (reaction.compositionId || 'halfbody'))?.description || '旧配方默认半身，可自由切换。'}><select value={reaction.compositionId || 'halfbody'} onChange={e => onReaction({ compositionId: e.target.value as Reaction['compositionId'] })}>{compositions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+    {interactions.length > 0 && <div className="interaction-editor">
+      <Field label="怎么和你互动" hint={interaction?.description || '选择角色与看图人的互动关系。'}><select value={reaction.interactionId || 'observe'} onChange={e => onReaction({ interactionId: e.target.value as Reaction['interactionId'] })}>{interactions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+      <fieldset className="intensity-field"><legend className="field-label">表演张力</legend><div className="intensity-options">{intensityOptions.map(item => <label key={item.value} title={item.description}><input type="radio" name="reaction-intensity" value={item.value} checked={intensity === item.value} onChange={() => onReaction({ intensity: item.value })} /><span><i aria-hidden="true">{item.value === 1 ? '·' : item.value === 2 ? '✦' : '✷'}</i>{item.label}</span></label>)}</div><p className="field-hint">{intensityOptions.find(item => item.value === intensity)?.description}</p></fieldset>
+      <Field label="希望对方看完…"><input value={reaction.intent || ''} maxLength={160} onChange={e => onReaction({ intent: e.target.value })} placeholder="想抱住、想摸摸，还是笑出声？" /></Field>
+    </div>}
+    <p className="field-hint generation-edit-hint">镜头、互动与动作在下次生成时生效。{job?.asset ? '当前成品仍是原图。' : '先选一种想传给对方的感受。'}</p>
     <Field label="动作与情绪" hint="一个清楚的主动作，小图也能一眼看懂。"><textarea rows={4} value={reaction.action} onChange={e => onReaction({ action: e.target.value })} /></Field>
     <div className="caption-heading"><span><Type size={15} />表情文字</span><label className="toggle"><input type="checkbox" aria-label="启用表情文字" checked={text.enabled} onChange={e => onCaption({ ...text, enabled: e.target.checked })} /><span /></label></div>
     <input className="caption-input" aria-label="表情文案" value={text.text} maxLength={48} placeholder="也可以不加字" onChange={e => onCaption({ ...text, text: e.target.value })} disabled={!text.enabled} />

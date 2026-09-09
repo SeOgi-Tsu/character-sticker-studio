@@ -2,6 +2,8 @@
 
 V0.2 adds per-reaction `compositionId`, `catalog.compositions`, RunningHub provider settings and `POST /api/jobs/:id/resume`. See [V2_CONTRACT.md](V2_CONTRACT.md) for the exact additions. Known RunningHub remote tasks resume querying on restart; other ambiguous submissions remain unknown. All original endpoints remain compatible.
 
+V0.3 adds `catalog.interactions` and optional Reaction/override fields `interactionId` (observe/approach/offer/touch/squish/comic), `intensity` (integer 1..3), and `intent` (string, max160 UTF-16 code units). These survive project save and recipe import/export. Missing fields preserve old recipe compatibility; prompt defaults are observe/2/no intent. Existing provider requests and settings are unchanged. See [V3_INTERACTION_PLAN.md](V3_INTERACTION_PLAN.md).
+
 Shared TS types: `src/shared/types.ts`. Content exports `catalog` from `src/shared/catalog.ts` and `buildStickerPrompt(character, reaction, style)`, `buildAnchorPrompt(character, style)`, `buildCharacterPrompt(character)`, `buildNijiPrompt(character, options?)` from `src/shared/prompts.ts`. Niji options: `{layout?: 'single'|'turnaround'|'detail', stylize?: number, raw?: boolean, styleReference?: string}`. All return string.
 
 All API results JSON unless PNG/ZIP; errors `{error:string}` with non-2xx status.
@@ -15,7 +17,7 @@ All API results JSON unless PNG/ZIP; errors `{error:string}` with non-2xx status
 - GET `/api/jobs?projectId=...` -> Job[]. GET `/api/jobs/:id` -> Job.
 - POST `/api/jobs/:id/cancel` -> Job (queued cancelled; running best-effort abort with ambiguity explained).
 - POST `/api/jobs/:id/retry` `{requestId:string}` -> Job (new version; no destructive overwrite; explicit action for unknown jobs).
-- POST `/api/jobs/import` `{projectId,assetId,kind,reactionId?,name,provenance}` -> Job succeeded imported provenance, not a provider run (used to bring back Niji or external assets). model/provider describe imported.
+- POST `/api/jobs/import` `{projectId,assetId,kind,reactionId?,name,provenance}` -> Job succeeded imported provenance (max20000 characters, so full generation prompts can be retained), not a provider run (used to bring back Niji or external assets). model/provider describe imported.
 - GET `/api/projects/:id/recipe` -> portable JSON `{version:1,project}` sans asset paths/secrets; reference filenames may be a separate manifest. POST `/api/projects/import` `{version:1,project}` -> new Project with no untrusted local asset IDs.
 - GET `/api/projects/:id/export?captions=1&size=512` -> ZIP successful sticker results (latest successful per reaction), originals/ + resized/ always, captioned/ if requested + recipe.json + contact-sheet.png, fail explicitly if no sticker images. Asset-level download via URL remains original file.
 - GET `/api/jobs/:id/render?size=512&caption=1` -> captioned PNG using current project's caption override or reaction caption; defaults caption enabled. Preserve real alpha (don't silently fake transparency). Use Sharp with escaped Pango/SVG, bundled font if available.

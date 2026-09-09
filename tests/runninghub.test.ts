@@ -102,17 +102,29 @@ test('RunningHub app settings and job API reject invalid mappings, isolate secre
  }finally{await stop();await upstream.close();await rm(dir,{recursive:true,force:true});}
 });
 
-test('cancellation after submission retains remote ID and never claims remote cancellation',async()=>{
+test('cancellation after submission retains remote ID and never claims remote cancellation',{timeout:10000},async()=>{
  const dir=await mkdtemp(join(tmpdir(),'rh-cancel-'));
  const upstream=await remote(url=>url.endsWith('/query')?{status:'RUNNING',taskId}:{code:0,data:{taskId}});
- const runtime=createApp({dataDir:dir,provider:provider()}),server=runtime.app.listen(0,'127.0.0.1');await new Promise<void>(r=>server.once('listening',r));
+ let markRecorded!:()=>void,markSettled!:()=>void;
+ const recorded=new Promise<void>(resolve=>{markRecorded=resolve;}),settled=new Promise<void>(resolve=>{markSettled=resolve;});
+ const engine=provider();
+ const runtime=createApp({dataDir:dir,provider:{async generate(input){
+  try{return await engine.generate({...input,onRemoteTaskId:async id=>{
+   await input.onRemoteTaskId?.(id);
+   // Hold at the persisted-ID boundary so a polling transport failure cannot
+   // finish the task before this test reaches the cancellation endpoint.
+   const aborted=new Promise<void>(resolve=>{if(input.signal.aborted)resolve();else input.signal.addEventListener('abort',()=>resolve(),{once:true});});
+   markRecorded();await aborted;
+  }});}finally{markSettled();}
+ }}}),server=runtime.app.listen(0,'127.0.0.1');await new Promise<void>(r=>server.once('listening',r));
  const call=async(path:string,method='GET',body?:unknown)=>{const res=await fetch(`http://127.0.0.1:${(server.address() as {port:number}).port}${path}`,{method,headers:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});return {status:res.status,data:await res.json()};};
  try{
   await call('/api/settings','PUT',config(upstream.url));const p=(await call('/api/bootstrap')).data.projects[0];
   const job=(await call('/api/jobs','POST',{projectId:p.id,kind:'character',requestId:'cancel-running'})).data.jobs[0];
-  for(let i=0;i<200;i++){if((await call(`/api/jobs/${job.id}`)).data.remoteTaskId)break;await new Promise(r=>setTimeout(r,10));}
+  await Promise.race([recorded,settled.then(()=>{throw new Error('Generation ended before the cancellation boundary.');})]);
+  assert.equal((await call(`/api/jobs/${job.id}`)).data.status,'running');
   const cancelled=(await call(`/api/jobs/${job.id}/cancel`,'POST',{})).data;assert.equal(cancelled.status,'unknown');assert.equal(cancelled.remoteTaskId,taskId);assert.match(cancelled.error,/仍在生成或计费/);
-  await new Promise(r=>setTimeout(r,30));const after=(await call(`/api/jobs/${job.id}`)).data;assert.equal(after.status,'unknown');assert.equal(after.remoteTaskId,taskId);assert.equal(upstream.calls.filter(c=>c.url.endsWith('/run')).length,1);assert.ok(upstream.calls.every(c=>!c.url.endsWith('/cancel')));
+  await settled;const after=(await call(`/api/jobs/${job.id}`)).data;assert.equal(after.status,'unknown');assert.equal(after.remoteTaskId,taskId);assert.equal(after.error,cancelled.error);assert.equal(upstream.calls.filter(c=>c.url.endsWith('/run')).length,1);assert.ok(upstream.calls.every(c=>!c.url.endsWith('/cancel')));
   // A queued recovery already has a remote task; cancelling that queue is local-only too.
   const record=runtime.store.get<any>('jobs',job.id);record.job.status='queued';runtime.store.put('jobs',job.id,record);
   const queued=(await call(`/api/jobs/${job.id}/cancel`,'POST',{})).data;assert.equal(queued.status,'unknown');assert.match(queued.error,/远程任务/);

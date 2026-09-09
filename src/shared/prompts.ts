@@ -1,5 +1,5 @@
 import type { Character, Reaction, Style } from './types.ts';
-import { getComposition } from './catalog.ts';
+import { getComposition, getInteraction } from './catalog.ts';
 
 export interface NijiPromptOptions {
   layout?: 'single' | 'turnaround' | 'detail';
@@ -22,8 +22,22 @@ function characterDescription(character: Character): string {
   ].filter(([, value]) => cleanProse(value)).map(([label, value]) => `${label}: ${cleanProse(value)}.`).join('\n');
 }
 
-const identityRule = 'Use the supplied character reference for identity: preserve the recognizable hair design, hair color, eye color, distinctive accessories and outfit color blocks. Use an approved chibi anchor to preserve the chosen drawing finish and those identity cues only. Do not copy the reference pose, camera angle, crop or subject scale. Rebuild the silhouette and staging for this reaction, keeping the selected drawing style coherent; expressive squash, stretch and foreshortening are welcome where the action needs them. Keep accessories attached naturally and do not substitute a different character.';
-const stickerComposition = 'Output: exactly one character, one reaction, one image. A single isolated sticker unit on a square canvas, legible at 96 pixels, with safe margin around the whole chosen staging. Follow the selected framing; all intentionally visible hair ornaments, hands, feet and props must stay inside the canvas. No grid, no collage, no multi-panel sheet, no duplicate poses, no extra characters. Prefer genuine transparent background where supported; otherwise use a plain uniform white background, never a drawn checkerboard. No text, no letters, no numbers, no speech bubbles, no captions, no logo and no watermark. Caption typography is added separately after generation.';
+const identityRule = 'Use the supplied character reference for identity: preserve the recognizable hair design, hair color, eye color, distinctive accessories and outfit color blocks. Use an approved chibi anchor to preserve the chosen drawing finish and those identity cues only. Do not copy the reference pose, camera angle, crop or subject scale. Rebuild the silhouette and staging for this reaction, keeping the selected drawing style coherent. Let the selected intensity determine any squash, stretch or foreshortening. Keep accessories attached naturally and do not substitute a different character.';
+const stickerComposition = 'Output: exactly one character, one reaction, one image. A single isolated sticker unit on a square canvas, legible at 96 pixels. Follow the selected framing and protect the eyes, mouth and action-defining contact. No grid, no collage, no multi-panel sheet, no duplicate poses or second complete character. An anonymous partial viewer hand is allowed only under the selected contact mode rules. Prefer genuine transparent background where supported; otherwise use a plain uniform white background, never a drawn checkerboard. No text, no letters, no numbers, no speech bubbles, no captions, no logo and no watermark. Caption typography is added separately after generation.';
+
+function stagingBoundary(reaction: Reaction): string {
+  const composition = getComposition(reaction);
+  if (['fullbody', 'action', 'scene'].includes(composition.id)) {
+    return 'Frame boundary: preserve the complete body or scene required by the selected wide staging, including required feet and props. A permitted viewer hand may enter from an edge with its wrist continuing outside. Keep the action legible with breathing room; do not replace a wide composition with a head portrait.';
+  }
+  return 'Frame boundary: allow deliberate overlap with an edge for an approaching hand, trailing hair, a prop or peek occluder when this explains the interaction. Keep eyes, mouth, distinctive identity cues and the contact point visible. Preserve the waist for half-body staging. Edge entry is purposeful, not accidental clipping; do not force equal empty margins.';
+}
+
+function intensityDirection(reaction: Reaction): string {
+  if (reaction.intensity === 1) return 'Gentle intensity: use natural proportions, relaxed acting and one subtle contact or pose cue. Preserve a quiet pause; no forced impact burst, extreme lens distortion or oversized tearful eyes.';
+  if (reaction.intensity === 3) return 'Dramatic intensity: amplify relevant foreshortening, soft deformation, asymmetry or size contrast to make the single emotional beat instantly readable. Choose the device that fits this action, never all effects at once. Preserve the selected camera distance and required body coverage; exaggeration does not require a closer crop or huge sparkling eyes.';
+  return 'Expressive intensity: make the gesture, silhouette and eye-mouth relationship clear, with moderate pose exaggeration and credible limb connections. Choose one expressive emphasis rather than enlarging every feature.';
+}
 
 export function buildStickerPrompt(character: Character, reaction: Reaction, style: Style): string {
   return [
@@ -32,10 +46,14 @@ export function buildStickerPrompt(character: Character, reaction: Reaction, sty
     identityRule,
     `Use only this selected visual style for the entire set: ${cleanProse(style.prompt)}`,
     `Selected staging — this determines camera distance, crop and subject scale even if the reference uses different framing: ${getComposition(reaction).prompt}`,
+    `Selected interaction — the selected staging has priority over interaction, intensity and action wording: ${getInteraction(reaction).prompt}`,
+    intensityDirection(reaction),
+    reaction.intent?.trim() ? `Audience feeling and chat use, not lettering to render: ${cleanProse(reaction.intent)}` : '',
     `Draw this one concrete action and expression: ${cleanProse(reaction.action)}`,
-    'Capture the clearest single instant of the reaction. A dynamic action is one frozen pose, not a sequence. Body posture, silhouette and object interaction must carry the emotion as well as the face. If wording in the action suggests a different crop, keep its emotion and adapt the gesture to the selected staging. Hands have simple natural anatomy; required props remain readable without covering the eyes. Use only a few purposeful hearts, tears or motion marks.',
+    'Capture the clearest single instant of the reaction: one dominant visual joke or emotional beat. A dynamic action is one frozen pose, not a sequence. Body posture, silhouette and object interaction must carry the emotion as well as the face. Keep the eyes and mouth readable; closed, sleepy, deadpan or asymmetrical eyes are valid when the action calls for them. If the action suggests a conflicting crop or disallowed contact, preserve its emotion and adapt the gesture to the selected staging and interaction. Hands have simple coherent anatomy, with a clear owner and connected wrist; no duplicate limbs. Effects may support the chosen beat, but should not compete with the gesture or become a repeated heart-and-sparkle template.',
+    stagingBoundary(reaction),
     stickerComposition,
-  ].join('\n\n');
+  ].filter(Boolean).join('\n\n');
 }
 
 export function buildAnchorPrompt(character: Character, style: Style): string {
