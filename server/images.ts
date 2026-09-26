@@ -1,5 +1,5 @@
 import sharp, { type Metadata, type OverlayOptions } from 'sharp';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -14,6 +14,11 @@ const transparent={r:0,g:0,b:0,alpha:0};
 const fontDirectory=fileURLToPath(new URL('../public/fonts/',import.meta.url));
 const captionText=(value:string)=>Array.from(value.replace(/\r\n?/g,'\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g,'')).slice(0,48).join('');
 export interface RenderOptions { embeddedText?:boolean; }
+/** Compare decoded image content, independent of PNG compression, metadata or RGB/RGBA encoding. */
+export async function imageContentHash(buffer:Buffer) {
+ const {data,info}=await sharp(buffer,{limitInputPixels:40_000_000,animated:false}).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+ return `sha256:${createHash('sha256').update(`rgba:${info.width}:${info.height}:`).update(data).digest('hex')}`;
+}
 /** Preserve untouched transparent/partly transparent pixels; whole-image premultiplication rounds them. */
 async function compositeOriginalPixels(base:Buffer,overlay:Buffer,left=0,top=0){
  const source=await sharp(base).ensureAlpha().raw().toBuffer({resolveWithObject:true});
@@ -87,12 +92,18 @@ export class Images {
  constructor(readonly store:Store){this.directory=join(store.dataDir,'assets');mkdirSync(this.directory,{recursive:true,mode:0o700});}
  path(id:string){if(!/^[\da-f-]{36}$/.test(id))throw new Error('图片编号无效。');return join(this.directory,`${id}.png`);}
  async load(id:string){if(!this.store.get<Asset>('assets',id))throw new Error('找不到参考图，请重新上传。');return readFile(this.path(id));}
+ async withContentHash(id:string):Promise<Asset>{
+  const asset=this.store.get<Asset>('assets',id);if(!asset)throw new Error('找不到参考图，请重新上传。');
+  if(asset.contentHash)return asset;
+  const next={...asset,contentHash:await imageContentHash(await this.load(id))};
+  this.store.put('assets',id,next);return next;
+ }
  async save(buffer:Buffer,filename:string,provenance?:string):Promise<Asset>{
   if(buffer.length>40*1024*1024)throw new Error('图片太大，请使用 40 MB 以内的图片。');
   let data:Buffer,meta:Metadata;
   try{meta=await sharp(buffer,{limitInputPixels:40_000_000,animated:false}).metadata();if(!['png','jpeg','webp','avif','gif'].includes(meta.format||''))throw new Error('format');data=await sharp(buffer,{limitInputPixels:40_000_000,animated:false}).rotate().png().toBuffer();meta=await sharp(data).metadata();}catch{throw new Error('图片无法读取，请上传 PNG、JPEG、WebP、AVIF 或 GIF 静态首帧。');}
   const id=randomUUID();await writeFile(this.path(id),data,{mode:0o600});
-  const asset:Asset={id,url:`/assets-local/${id}.png`,filename:exportName(filename),width:meta.width!,height:meta.height!,hasAlpha:meta.hasAlpha===true,...(provenance?{provenance}: {})};
+  const asset:Asset={id,url:`/assets-local/${id}.png`,filename:exportName(filename),width:meta.width!,height:meta.height!,hasAlpha:meta.hasAlpha===true,contentHash:await imageContentHash(data),...(provenance?{provenance}: {})};
   this.store.put('assets',id,asset);return asset;
  }
  async render(asset:Asset,size:ExportSize='original',caption?:Caption,options:RenderOptions={}) {

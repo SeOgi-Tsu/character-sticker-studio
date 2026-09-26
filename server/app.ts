@@ -1,4 +1,5 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
+import { registerVideoRoutes } from './video.ts';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -249,6 +250,7 @@ export function createApp(options:AppOptions={}) {
   const archive=archiver('zip',{zlib:{level:6}});archive.on('error',error=>{if(!res.headersSent)res.status(500).json({error:'压缩包导出失败，请重试。'});else res.destroy(error);});res.on('close',()=>{if(!res.writableEnded)archive.abort();});archive.pipe(res);
   for(const entry of entries)archive.append(entry.data,{name:entry.name});archive.append(JSON.stringify({...portable(project),export:{size,originalResolution:size==='original'},results:jobs.map(({name,reactionId,prompt,provider,model,asset,textMode,generatedText})=>({name,reactionId,prompt,provider,model,filename:asset?.filename,width:asset?.width,height:asset?.height,hasAlpha:asset?.hasAlpha,textMode:textMode??'overlay',...(generatedText!==undefined?{generatedText}:{})}))},null,2),{name:'recipe.json'});archive.append(contact,{name:'contact-sheet.png'});await archive.finalize();
  });
+ registerVideoRoutes(app,store,images,fail);
  app.use('/api',(_req,_res,next)=>next(new HttpError(404,'接口不存在。')));
  const dist=paths.frontendDir;if(existsSync(join(dist,'index.html'))){app.use(express.static(dist));app.get('/{*path}',(_req,res)=>res.sendFile(join(dist,'index.html')));}
  app.use((error:any,_req:Request,res:Response,_next:NextFunction)=>{if(res.headersSent)return;const status=error instanceof HttpError?error.status:error.type==='entity.too.large'?413:error instanceof SyntaxError?400:500;res.status(status).json({error:error instanceof HttpError?error.message:status===413?'上传文件太大。':status===400?'JSON 请求格式无效。':'操作失败，请重试或检查服务端日志。'});if(status===500)console.error('[studio]',error?.name||'Error');});

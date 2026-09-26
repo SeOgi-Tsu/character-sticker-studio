@@ -176,3 +176,27 @@ ZIP 选择每个反应最新的成功表情任务，导出整个项目的成功�
 偏好按 origin 隔离。项目 ID 失效则回到 Bootstrap 第一个项目，再依据已选参考/母版进入角色、母版或表情页面。存储属性访问、读写失败不阻止操作，但偏好可能无法跨刷新保留。
 
 引导只创建独立项目，不生成图片：先保存当前编辑，新角色仅使用输入名字与简介，不继承当前项目的其他资料或素材。失败保留输入、不写已看标志；成功或主动关闭才写入。引导名字最多 80、简介最多 2000，这不替代项目 API 的字段上限。
+
+## H3 动态配方
+
+这些端点继承工作室的口令、来源和 Host 检查。工作区存于 `video-workspaces`，通用模板存于 `video-templates`，不改动旧版静态项目配方。
+
+| 端点 | 行为 |
+| --- | --- |
+| GET /api/projects/:id/video | `{workspace,templates,frameAssets,frameConflicts}`；相关旧资产懒补 contentHash；无记录时返回默认工作区 |
+| PUT /api/projects/:id/video | 完整保存 `VideoWorkspace`；revision 必须匹配，成功递增，冲突 409 |
+| POST /api/projects/:id/video/theatre-pack | `{revision}`；备份并归档旧卡、加入缺少的新版小剧场；重复调用不添加重复卡片 |
+| POST /api/projects/:id/video/check-frame | `{workspace,cardId,assetId}`；检查候选独立首帧，重复 409；成功返回 `{ok:true,frameAssets}` |
+| POST /api/video/templates | 收藏单个动作；分配新 ID，剔除图片、角色和改写稿元数据 |
+| GET /api/video/templates/export | 下载 `{format:"h3-motion-templates",version:1,templates}` |
+| POST /api/video/templates/import | 导入上述格式，最多 60 个；全部校验成功后事务写入，分配新 ID |
+| DELETE /api/video/templates/:id | 删除收藏；不改变工作区中的动作副本 |
+| GET /api/projects/:id/video/export | 按 included 打包 PNG、TXT、manifest.json 与通用模板；无有效图片或提示词格式错误返回 400 |
+| GET /api/projects/:id/video/export?check=1 | 仅校验，返回 `{ok:true,count}`，不生成 ZIP；必要时读取旧图片补全像素指纹 |
+| GET /api/video/text-settings | 仅返回 baseUrl、model、hasApiKey |
+| PUT /api/video/text-settings | 独立文字接口；apiKey 留空保留，改地址或 clearApiKey=true 清除旧密钥 |
+| POST /api/projects/:id/video/rewrite | `{workspace,cardId}`；向配置的文字接口发送草稿与角色文字，90 秒超时、不自动重试，返回 `{prompt}` |
+
+`VideoWorkspace` 与 `MotionTemplate` 字段见 `src/shared/video.ts`。工作区最多 60 张卡，旧版三段动作；带 theatre 的新版支持 3–5 段并要求严格递增的 ends 比例且以 1 结尾，时长仅 4/6/8 秒，模式仅 I2VA/Ref2VA。图片通过既有 `/api/assets` 上传。首帧签名是变更检测值，不是安全凭证；元数据是否匹配不等同于图片内容已人工验收。可选文字接口返回格式错误时状态 422，上游失败 502；无视频生成请求。
+
+V3 的 `Asset.contentHash` 是规范化图像解码后的 RGBA 像素与尺寸 SHA-256，不受 PNG 压缩或无关元数据影响。PUT 可保存已经存在的冲突草稿，但拒绝增加新的重复首帧关系。全部非归档有效 I2VA 绑定参与占用检查，不依赖 included；Ref2VA 和身份母版不参与。导出将主动选中的归档卡也纳入检查，只拦截影响本次所选卡片的冲突。资料索引 `research-reference-index.json` 随 ZIP 导出，不包含第三方原始媒体。

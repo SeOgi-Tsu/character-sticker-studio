@@ -33,7 +33,7 @@ export interface Project {
   customReactions: Reaction[]; overrides: Record<string, Partial<Reaction>>;
   captions: Record<string, Caption>; createdAt: string; updatedAt: string;
 }
-export interface Asset { id: string; url: string; filename: string; width: number; height: number; hasAlpha: boolean; provenance?: string; }
+export interface Asset { id: string; url: string; filename: string; width: number; height: number; hasAlpha: boolean; provenance?: string; contentHash?: string; }
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'unknown';
 export interface Job {
   id: string; projectId: string; kind: 'sticker' | 'anchor' | 'character';

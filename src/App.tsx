@@ -6,6 +6,7 @@ import { canResumeJob } from './lib/jobs';
 import { Field, Modal, Status } from './components/Common';
 import CharacterView from './components/CharacterView';
 import NijiWorkshop from './components/NijiWorkshop';
+import VideoWorkshop from './components/VideoWorkshop';
 import Settings from './components/Settings';
 import StickerInspector from './components/StickerInspector';
 import { captionStyles, defaultCaptionFor } from './shared/typography';
@@ -14,13 +15,14 @@ import StartGuide from './components/StartGuide';
 import { hasSeenGuide, markGuideSeen, newCharacterFromGuide, readActiveProjectId, rememberActiveProjectId, type StartGuideInput, type StartMode } from './lib/onboarding';
 import { applyProjectChange } from './lib/character-workflow';
 
-type Page = 'character' | 'anchor' | 'stickers' | 'history' | 'export' | 'niji';
+type Page = 'character' | 'anchor' | 'stickers' | 'history' | 'export' | 'niji' | 'video';
 const navigation = [
   { id: 'character' as Page, label: '角色设定', en: 'CHARACTER', icon: Smile, number: '01' },
   { id: 'anchor' as Page, label: 'Q 版母版', en: 'CHIBI ANCHOR', icon: ImagePlus, number: '02' },
   { id: 'stickers' as Page, label: '表情工坊', en: 'STICKER STUDIO', icon: Heart, number: '03' },
-  { id: 'history' as Page, label: '生成记录', en: 'GENERATIONS', icon: History, number: '04' },
-  { id: 'export' as Page, label: '打包带走', en: 'EXPORT & SHARE', icon: Download, number: '05' },
+  { id: 'video' as Page, label: '动态表情', en: 'MOTION RECIPES', icon: Layers3, number: '04' },
+  { id: 'history' as Page, label: '生成记录', en: 'GENERATIONS', icon: History, number: '05' },
+  { id: 'export' as Page, label: '打包带走', en: 'EXPORT & SHARE', icon: Download, number: '06' },
 ];
 
 function withAssets(existing: Asset[], incoming: Asset[]) { return Array.from(new Map([...existing, ...incoming].map(asset => [asset.id, asset])).values()); }
@@ -79,6 +81,8 @@ export default function App() {
   const [notice, setNotice] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
   const [pollError, setPollError] = useState('');
   const projectRef = useRef<Project | null>(null);
+  const videoSave = useRef<(() => Promise<void>) | null>(null);
+  const [videoMaster, setVideoMaster] = useState<{projectId:string;assetId?:string} | null>(null);
   const revision = useRef(0);
   const savedRevision = useRef(0);
   const savePromise = useRef<Promise<Project> | null>(null);
@@ -93,11 +97,11 @@ export default function App() {
     setLoading(true); setLoadError('');
     try {
       const data = await api<Bootstrap>('/api/bootstrap');
-      const rememberedId = readActiveProjectId();
+      const rememberedId = new URLSearchParams(window.location.search).get('project') || readActiveProjectId();
       const first = data.projects.find(item => item.id === rememberedId) || data.projects[0];
       if (!first) throw new Error('工作室没有可用项目，请检查服务端初始化。');
       setProjects(data.projects); setProject(first); projectRef.current = first;
-      setPage(!first.character.referenceAssetId ? 'character' : !first.character.anchorAssetId ? 'anchor' : 'stickers');
+      setPage(new URLSearchParams(window.location.search).get('view') === 'video' ? 'video' : !first.character.referenceAssetId ? 'character' : !first.character.anchorAssetId ? 'anchor' : 'stickers');
       setPreviewOrder([...first.selectedIds]);
       revision.current = 0; savedRevision.current = 0; setDirty(false);
       setCatalog({ ...data.catalog, compositions: data.catalog.compositions || [], interactions: data.catalog.interactions || [], captionStyles: data.catalog.captionStyles?.length ? data.catalog.captionStyles : captionStyles, personas: data.catalog.personas || [] }); setSettings(data.settings); setAssets(withAssets(data.assets, data.jobs.flatMap(j => j.asset ? [j.asset] : []))); setJobs(data.jobs);
@@ -149,13 +153,16 @@ export default function App() {
       return updated;
     } finally { savePromise.current = null; setSaving(false); }
   }
-  async function saveAll() { let result = await saveProject(); while (revision.current !== savedRevision.current) result = await saveProject(); return result; }
+  async function saveAll() { await videoSave.current?.(); let result = await saveProject(); while (revision.current !== savedRevision.current) result = await saveProject(); return result; }
   async function run(action: () => Promise<void>) {
     if (busyRef.current) return;
     busyRef.current = true; setBusy(true);
     try { await action(); } catch (e) { handleError(e); } finally { busyRef.current = false; setBusy(false); }
   }
-  function navigate(next: Page) { setPage(next); setSidebarOpen(false); }
+  function navigate(next: Page) {
+    if (page === 'video' && next !== page) { void (async () => { try { await videoSave.current?.(); setPage(next); setSidebarOpen(false); } catch (error) { handleError(error); } })(); }
+    else { setPage(next); setSidebarOpen(false); }
+  }
   function closeGuide() { markGuideSeen(); setGuideOpen(false); setGuideError(''); }
   function adoptProject(next: Project) {
     projectRef.current = next; setProject(next); revision.current = 0; savedRevision.current = 0; setDirty(false);
@@ -270,7 +277,7 @@ export default function App() {
   const latestFor = (id: string) => ownJobs.find(job => job.kind === 'sticker' && job.reactionId === id);
   const anchorAsset = assets.find(asset => asset.id === project.character.anchorAssetId);
   const referenceAsset = assets.find(asset => asset.id === project.character.referenceAssetId);
-  const heroAsset = anchorAsset || referenceAsset;
+  const heroAsset = page === 'video' && videoMaster?.projectId === project.id ? assets.find(asset => asset.id === videoMaster.assetId) : anchorAsset || referenceAsset;
   const currentStyle = catalog.styles.find(style => style.id === project.styleId) || catalog.styles[0];
   const readyCount = new Set(ownJobs.filter(job => job.kind === 'sticker' && job.status === 'succeeded').map(job => job.reactionId)).size;
   const activeCount = ownJobs.filter(job => ['running', 'queued'].includes(job.status)).length;
@@ -317,6 +324,7 @@ export default function App() {
       <footer className="batch-bar"><div className="batch-selection"><div className="selection-count">{String(project.selectedIds.length).padStart(2, '0')}</div><div><strong>张表情已选中</strong><span>{currentStyle?.name || '选择画风'} <span>·</span> {activeCount ? `${activeCount} 张正在生成` : readyCount ? `本项目共 ${readyCount} 张已完成` : '每张独立生成'}</span></div></div><div className="batch-actions">{!settings.hasApiKey && <button className="connection-hint" onClick={() => setSettingsOpen(true)}><span className="connection-dot" />连接图片 API</button>}<button className="button secondary" disabled={busy || !project.selectedIds.length || uploading} onClick={() => void generate('sticker', [project.selectedIds[0]])}>先做 1 张样张</button><button className="button primary" disabled={busy || !project.selectedIds.length || uploading} onClick={() => void generate('sticker')}>{busy ? <LoaderCircle size={16} className="spin" /> : <WandSparkles size={17} />}生成选中的 {project.selectedIds.length} 张<ArrowRight size={16} /></button></div></footer></div> : <main className="page-content">
         {(page === 'character' || page === 'anchor') && <CharacterView key={page} project={project} assets={assets} jobs={jobs} catalog={catalog} onChange={changeProject} onUpload={(file, target) => void upload(file, target)} onGenerate={kind => void generate(kind)} onNiji={() => navigate('niji')} busy={busy} uploading={uploading} anchorMode={page === 'anchor'} entryMode={entryMode} onNext={() => void nextCharacterStep(page === 'anchor')} onHistory={() => navigate('history')} onPreview={job => void openPreview(job)} />}
         {page === 'niji' && <NijiWorkshop key={project.id} project={project} onUpload={(file, target) => void upload(file, target)} uploading={uploading} onError={message => notify(message, 'error')} />}
+        {page === 'video' && <VideoWorkshop key={project.id} project={project} assets={assets} onAsset={asset => setAssets(current => withAssets(current, [asset]))} onMasterChange={setVideoMaster} notify={notify} saveBeforeLeave={videoSave} />}
         {(page === 'history' || page === 'export') && <ResultsView project={project} jobs={jobs} onPreview={job => void openPreview(job)} onDownload={job => void downloadJob(job)} onRetry={job => void retry(job)} onResume={job => void resume(job)} onCancel={job => void cancel(job)} onExport={(captions, size) => void exportZip(captions, size)} onRecipe={() => void exportRecipe()} busy={busy} exportMode={page === 'export'} />}
       </main>}
     </div>
