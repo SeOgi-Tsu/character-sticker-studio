@@ -43,6 +43,31 @@ test('each scene freezes its own image; master is only fallback and invalid batc
 
 test('chat GIF resize preserves animation timing and loop without touching original bytes',async()=>{const f=await fixture();try{const bytes=await gif(512),a=await f.images.saveGif(bytes,'loop.gif'),rendered=await f.images.renderGif(a,256),meta=await sharp(rendered,{animated:true}).metadata();assert.equal(meta.pages,3);assert.deepEqual(meta.delay,[40,80,40]);assert.equal(meta.loop,0);assert.equal(meta.width,256);assert.equal(meta.pageHeight,256);assert.deepEqual(await f.images.load(a.id),bytes);assert.deepEqual(await f.images.renderGif(a),bytes);}finally{await f.dispose();}});
 
+test('per-recipe duration is validated and frozen; omitted legacy duration stays three seconds',async()=>{
+ const calls:GenerationInput[]=[],bytes=await gif(),f=await fixture({async generate(input){calls.push(input);return bytes;}});
+ try{const {p,w}=await prepare(f),path=`/api/projects/${p.id}/loop`;
+  for(const value of [0,4,6,'5',null]){const invalid=structuredClone(w);invalid.recipes[0].durationSeconds=value;assert.equal((await f.call(path,'PUT',invalid)).status,400);}
+  w.recipes[0].durationSeconds=5;delete w.recipes[1].durationSeconds;
+  const saved=(await f.call(path,'PUT',w)).data;assert.equal(saved.recipes[0].durationSeconds,5);assert.equal(saved.recipes[1].durationSeconds,3);
+  const batch=(await f.call(path+'/jobs','POST',{revision:saved.revision,recipeIds:saved.recipes.slice(0,2).map((r:any)=>r.id),requestId:'duration-freeze'})).data;
+  saved.recipes[0].durationSeconds=3;await f.call(path,'PUT',saved);f.start();for(const j of batch.jobs)await waitFor(f,j.id,'succeeded');
+  const seconds=(prompt:string)=>calls.find(c=>c.prompt===prompt)!.settings.runninghub!.extraNodes.find(n=>n.nodeId==='46'&&n.fieldName==='value')!.fieldValue;
+  assert.equal(seconds(w.recipes[0].prompt),'5');assert.equal(seconds(w.recipes[1].prompt),'3');
+ }finally{await f.dispose();}
+});
+
+test('binary GIF import accepts files above the old JSON limit, preserves bytes, validates recipe and deduplicates',async()=>{
+ const f=await fixture();try{const {p,w}=await prepare(f),bytes=Buffer.concat([await gif(),Buffer.alloc(16*1024*1024)]),path=`/api/projects/${p.id}/loop/import-gif`,query=new URLSearchParams({recipeId:w.recipes[0].id,requestId:'binary-one'});
+  const send=(body:Buffer,q=query)=>fetch(f.base+path+'?'+q,{method:'POST',headers:{'content-type':'image/gif'},body:new Uint8Array(body)});
+  const res=await send(bytes);assert.equal(res.status,201);const j=await res.json();assert.equal(j.prompt,w.recipes[0].prompt);assert.equal(j.name,w.recipes[0].name);assert.equal(j.asset.frames,3);assert.deepEqual(await f.images.load(j.asset.id),bytes);
+  assert.equal((await (await send(bytes)).json()).id,j.id);
+  assert.equal((await send(await gif())).status,409);
+  assert.equal((await send(bytes,new URLSearchParams({recipeId:'missing',requestId:'bad-recipe'}))).status,400);
+  assert.equal((await send(Buffer.from('not gif'),new URLSearchParams({recipeId:w.recipes[0].id,requestId:'bad-gif'}))).status,400);
+  assert.equal((await send(Buffer.alloc(41*1024*1024))).status,413);assert.equal(f.store.all('jobs').length,1);
+ }finally{await f.dispose();}
+});
+
 test('GIF import and download preserve every original byte and frame; PNG references stay static',async()=>{const f=await fixture();try{const {p,w}=await prepare(f),bytes=await gif();const body={name:'Imported loop',recipeId:w.recipes[0].id,dataUrl:`data:image/gif;base64,${bytes.toString('base64')}`,requestId:'import-one'};const result=await f.call(`/api/projects/${p.id}/loop/import`,'POST',body);assert.equal(result.status,201);const j=result.data;assert.equal(j.asset.format,'gif');assert.equal(j.asset.frames,3);assert.equal(j.asset.durationMs,160);assert.equal(j.asset.loop,0);assert.equal(j.asset.height,8);assert.deepEqual((await f.call(j.asset.url)).data,bytes);assert.match((await f.call(j.asset.url)).type!,/image\/gif/);assert.deepEqual((await f.call(`/api/jobs/${j.id}/render`)).data,bytes);assert.equal((await f.call(`/api/projects/${p.id}/loop/import`,'POST',body)).data.id,j.id);const zip=(await f.call(`/api/projects/${p.id}/loop/export`)).data as Buffer;assert.equal(zip.subarray(0,2).toString(),'PK');assert.ok(zip.includes(Buffer.from('01-Imported loop.gif')));assert.ok(!zip.includes(Buffer.from('private-loop-fixture')));const staticAsset=await f.images.save(bytes,'first.png');assert.equal(staticAsset.format,undefined);assert.equal((await sharp(await f.images.load(staticAsset.id)).metadata()).pages,undefined);assert.equal((await f.call(j.asset.url.replace('.gif','.png'))).status,404);assert.equal((await f.call(`/api/projects/${p.id}/loop`,'PUT',{...w,masterAssetId:j.asset.id})).status,400);
 }finally{await f.dispose();}});
 

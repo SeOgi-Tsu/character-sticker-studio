@@ -5,7 +5,7 @@ export const loopPresets = [...scenes, ...presets];
 export const sceneLoopPresets = scenes;
 export const loopWorkflowUrl='https://www.runninghub.ai/post/2116526206026842114';
 export const loopDefaultSettings:ProviderSettings={provider:'runninghub',baseUrl:'https://www.runninghub.ai',model:'workflow:2116526206026842114',size:'512x512',concurrency:1,runninghub:{kind:'workflow',resourceId:'2116526206026842114',promptNode:{nodeId:'8',fieldName:'value'},referenceNode:{nodeId:'7',fieldName:'image'},extraNodes:[{nodeId:'10',fieldName:'noise_seed',fieldValue:'42'}],outputIndex:0}};
-export interface LoopRecipe {id:string;name:string;prompt:string;seed:string;selected:boolean;referenceAssetId?:string;}
+export interface LoopRecipe {id:string;name:string;prompt:string;seed:string;selected:boolean;referenceAssetId?:string;durationSeconds?:3|5;}
 export interface LoopWorkspace {version:1;revision:number;masterAssetId?:string;recipes:LoopRecipe[];}
 export function buildLoopPrompt(action:string){return `subject_definitions:
 <Subject 1> is the single character in <Picture 1>, including the face, hairstyle, headwear, eye colors, costume, proportions and illustration style.

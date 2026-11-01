@@ -1,4 +1,4 @@
-import type { Express } from 'express';
+import express, { type Express, type Response } from 'express';
 import { createHash, randomUUID } from 'node:crypto';
 import archiver from 'archiver';
 import type { Store } from './store.ts';
@@ -14,6 +14,7 @@ export function registerLoopRoutes(app:Express,store:Store,images:Images,{fail,g
  const text=(v:unknown,max=100)=>{if(typeof v!=='string'||!v.trim()||v.length>max)fail('文字字段为空或过长。');return v as string;};
  const id=(v:unknown)=>{const s=text(v);if(!/^[a-zA-Z0-9_-]+$/.test(s))fail('编号无效。');return s;};
  const seed=(v:unknown)=>{const s=text(v,20);if(!/^\d+$/.test(s)||BigInt(s)>18446744073709551615n)fail('种子需要 0–18446744073709551615 的整数字符串。');return s;};
+ const duration=(v:unknown):3|5=>{if(v===undefined)return 3;if(v!==3&&v!==5)fail('生成时长请选择 3 秒或 5 秒。');return v as 3|5;};
  const reference=(v:unknown)=>{if(v===undefined)return;const value=id(v),asset=store.get<Asset>('assets',value);if(!asset||asset.format==='gif')fail('请选择静态角色母版。');return value;};
  const config=():ProviderSettings=>store.get('settings','loop')||structuredClone(loopDefaultSettings);
  const safe=()=>{const {apiKey,...rest}=config();return {...rest,hasApiKey:Boolean(apiKey)};};
@@ -31,7 +32,7 @@ export function registerLoopRoutes(app:Express,store:Store,images:Images,{fail,g
   const p=getProject(String(req.params.id)),old=workspace(p),b=object(req.body);
   if(b.version!==1||b.revision!==old.revision)fail('循环配方已在其他页面更改，请刷新后再保存。',409);
   if(!Array.isArray(b.recipes)||b.recipes.length<1||b.recipes.length>30)fail('支持 1–30 条循环配方。');
-  const recipes=b.recipes.map((r:any)=>{object(r);if(typeof r.selected!=='boolean')fail('选择状态无效。');return {id:id(r.id),name:text(r.name),prompt:text(r.prompt,12000),seed:seed(r.seed),selected:r.selected,...(r.referenceAssetId!==undefined?{referenceAssetId:reference(r.referenceAssetId)}:{})};});
+  const recipes=b.recipes.map((r:any)=>{object(r);if(typeof r.selected!=='boolean')fail('选择状态无效。');return {id:id(r.id),name:text(r.name),prompt:text(r.prompt,12000),seed:seed(r.seed),selected:r.selected,durationSeconds:duration(r.durationSeconds),...(r.referenceAssetId!==undefined?{referenceAssetId:reference(r.referenceAssetId)}:{})};});
   if(new Set(recipes.map((r:any)=>r.id)).size!==recipes.length)fail('循环配方编号重复。');
   const next:LoopWorkspace={version:1,revision:old.revision+1,masterAssetId:reference(b.masterAssetId),recipes};store.put('loop-workspaces',p.id,next);res.json(next);
  });
@@ -52,21 +53,29 @@ export function registerLoopRoutes(app:Express,store:Store,images:Images,{fail,g
   const recipes=recipeIds.map((rid:string)=>w.recipes.find(r=>r.id===rid)||fail('动作不存在。'));
   const records:StoredJob[]=recipes.map((r:any)=>{
    const referenceId=reference(r.referenceAssetId??w.masterAssetId);if(!referenceId)fail(`「${r.name}」需要场景参考图或角色母版。`);
-   const snapshot=structuredClone(settings);snapshot.runninghub!.extraNodes=[{nodeId:'10',fieldName:'noise_seed',fieldValue:seed(r.seed)},{nodeId:'37',fieldName:'keep_proportion',fieldValue:'pad'},{nodeId:'37',fieldName:'pad_color',fieldValue:'255, 255, 255'}];
+   const snapshot=structuredClone(settings);snapshot.runninghub!.extraNodes=[{nodeId:'10',fieldName:'noise_seed',fieldValue:seed(r.seed)},{nodeId:'37',fieldName:'keep_proportion',fieldValue:'pad'},{nodeId:'37',fieldName:'pad_color',fieldValue:'255, 255, 255'},{nodeId:'46',fieldName:'value',fieldValue:String(duration(r.durationSeconds))}];
    const date=new Date().toISOString();return {job:{id:randomUUID(),projectId:p.id,kind:'loop',reactionId:r.id,name:r.name,prompt:r.prompt,seed:r.seed,status:'queued',createdAt:date,updatedAt:date,provider:'runninghub',model:snapshot.model,textMode:'none'},settings:snapshot,referenceId};
   });res.status(201).json({jobs:saveBatch(key,signature,records)});
  });
- app.post('/api/projects/:id/loop/import',async(req,res)=>{
-  const p=getProject(String(req.params.id)),b=object(req.body),name=text(b.name),key=id(b.requestId),rid=id(b.recipeId);
-  const dataUrl=text(b.dataUrl,21*1024*1024),match=/^data:image\/gif;base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);if(!match)fail('请选择 GIF 文件。');
-  const bytes=Buffer.from(match![1],'base64');if(bytes.length>15*1024*1024)fail('导入 GIF 上限 15 MB。');
+ async function importGif(res:Response,p:Project,rid:string,name:string,key:string,prompt:string,bytes:Buffer){
   const signature=JSON.stringify({projectId:p.id,kind:'loop-import',rid,name,hash:createHash('sha256').update(bytes).digest('hex')}),prior=deduplicate(key,signature);if(prior)return res.json(prior[0]);
-  const prompt=typeof b.prompt==='string'?b.prompt.slice(0,12000):'外部生成 GIF，原始动画保留';
   let asset:Asset;try{asset=await images.saveGif(bytes,name+'.gif','用户导入循环 GIF');}catch(e){fail((e as Error).message);}
   // Recheck after asynchronous decoding: concurrent retries of the same request must not duplicate jobs.
   const duplicate=deduplicate(key,signature);if(duplicate)return res.json(duplicate[0]);
   const date=new Date().toISOString();const job:Job={id:randomUUID(),projectId:p.id,kind:'loop',reactionId:rid,name,prompt,status:'succeeded',asset:asset!,createdAt:date,updatedAt:date,provider:'imported',model:'GIF',textMode:'none'};
   res.status(201).json(saveBatch(key,signature,[{job}])[0]);
+ }
+ app.post('/api/projects/:id/loop/import',async(req,res)=>{
+  const p=getProject(String(req.params.id)),b=object(req.body),name=text(b.name),key=id(b.requestId),rid=id(b.recipeId);
+  const dataUrl=text(b.dataUrl,21*1024*1024),match=/^data:image\/gif;base64,([A-Za-z0-9+/]+={0,2})$/.exec(dataUrl);if(!match)fail('请选择 GIF 文件。');
+  const bytes=Buffer.from(match![1],'base64');if(bytes.length>15*1024*1024)fail('导入 GIF 上限 15 MB。');
+  await importGif(res,p,rid,name,key,typeof b.prompt==='string'?b.prompt.slice(0,12000):'外部生成 GIF，原始动画保留',bytes);
+ });
+ app.post('/api/projects/:id/loop/import-gif',express.raw({type:'image/gif',limit:'40mb'}),async(req,res)=>{
+  const p=getProject(String(req.params.id)),rid=id(req.query.recipeId),key=id(req.query.requestId);
+  const recipe=workspace(p).recipes.find(r=>r.id===rid)||fail('动作不存在。');
+  if(!Buffer.isBuffer(req.body)||!req.body.length)fail('请选择 GIF 文件。');
+  await importGif(res,p,rid,recipe.name,key,recipe.prompt,req.body);
  });
  app.get('/api/projects/:id/loop/export',async(req,res)=>{
   const p=getProject(String(req.params.id)),latest=new Map<string,Job>();
