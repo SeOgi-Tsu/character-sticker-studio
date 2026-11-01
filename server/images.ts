@@ -103,6 +103,13 @@ export class Images {
   await writeFile(join(this.directory,`${id}.gif`),buffer,{mode:0o600});this.store.put('assets',id,asset);return asset;
  }
  async load(id:string){if(!this.store.get<Asset>('assets',id))throw new Error('找不到参考图，请重新上传。');return readFile(this.path(id));}
+ /** Normalize rectangular loop references before upload; the published workflow may vary its own padding. */
+ async loopReference(id:string){
+  const input=await this.load(id),meta=await sharp(input,{limitInputPixels:40_000_000}).metadata();
+  if(meta.width===meta.height)return input;
+  const side=Math.min(2048,Math.max(meta.width!,meta.height!));
+  return sharp(input,{limitInputPixels:40_000_000}).flatten({background:'#ffffff'}).resize(side,side,{fit:'contain',background:'#ffffff',withoutEnlargement:true}).png().toBuffer();
+ }
  async renderGif(asset:Asset,size:ExportSize='original'){
   if(asset.format!=='gif')throw new Error('需要多帧 GIF 素材。');
   const input=await this.load(asset.id);if(size==='original')return input;

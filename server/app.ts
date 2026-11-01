@@ -142,7 +142,7 @@ export function createApp(options:AppOptions={}) {
  async function run(record:StoredJob,controller:AbortController){
   try{
    if(!record.settings?.apiKey)throw new ProviderError('队列中的接口配置不完整，请重新配置后手动重试。');
-   const reference=record.referenceId&&!record.job.remoteTaskId?await images.load(record.referenceId):undefined;
+   const reference=record.referenceId&&!record.job.remoteTaskId?await (record.job.kind==='loop'?images.loopReference(record.referenceId):images.load(record.referenceId)):undefined;
    const secondaryReference=record.secondaryReferenceId&&!record.job.remoteTaskId&&!(record.settings.provider==='runninghub'&&!record.settings.runninghub?.styleReferenceNode)?await images.load(record.secondaryReferenceId):undefined;
    if(controller.signal.aborted)return;
    const result=await provider.generate({settings:record.settings,prompt:record.job.prompt,reference,secondaryReference,signal:controller.signal,requireMembership:record.job.kind==='loop',remoteTaskId:record.job.remoteTaskId,onRemoteTaskId:id=>{
