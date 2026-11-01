@@ -6,7 +6,7 @@ import { Images, exportName } from './images.ts';
 import type { StoredJob } from './app.ts';
 import type { Asset, Job, Project, ProviderSettings } from '../src/shared/types.ts';
 import type { VideoWorkspace } from '../src/shared/video.ts';
-import { defaultLoopWorkspace, loopDefaultSettings, type LoopWorkspace } from '../src/shared/loop.ts';
+import { defaultLoopWorkspace, installSceneLoops, loopDefaultSettings, type LoopWorkspace } from '../src/shared/loop.ts';
 
 type Helpers={fail:(message:string,status?:number)=>never;getProject:(id:string)=>Project;saveBatch:(key:string,signature:string,records:StoredJob[])=>Job[];deduplicate:(key:string,signature:string)=>Job[]|undefined};
 export function registerLoopRoutes(app:Express,store:Store,images:Images,{fail,getProject,saveBatch,deduplicate}:Helpers){
@@ -31,9 +31,14 @@ export function registerLoopRoutes(app:Express,store:Store,images:Images,{fail,g
   const p=getProject(String(req.params.id)),old=workspace(p),b=object(req.body);
   if(b.version!==1||b.revision!==old.revision)fail('循环配方已在其他页面更改，请刷新后再保存。',409);
   if(!Array.isArray(b.recipes)||b.recipes.length<1||b.recipes.length>30)fail('支持 1–30 条循环配方。');
-  const recipes=b.recipes.map((r:any)=>{object(r);if(typeof r.selected!=='boolean')fail('选择状态无效。');return {id:id(r.id),name:text(r.name),prompt:text(r.prompt,12000),seed:seed(r.seed),selected:r.selected};});
+  const recipes=b.recipes.map((r:any)=>{object(r);if(typeof r.selected!=='boolean')fail('选择状态无效。');return {id:id(r.id),name:text(r.name),prompt:text(r.prompt,12000),seed:seed(r.seed),selected:r.selected,...(r.referenceAssetId!==undefined?{referenceAssetId:reference(r.referenceAssetId)}:{})};});
   if(new Set(recipes.map((r:any)=>r.id)).size!==recipes.length)fail('循环配方编号重复。');
   const next:LoopWorkspace={version:1,revision:old.revision+1,masterAssetId:reference(b.masterAssetId),recipes};store.put('loop-workspaces',p.id,next);res.json(next);
+ });
+ app.post('/api/projects/:id/loop/scene-pack',(req,res)=>{
+  const p=getProject(String(req.params.id)),old=workspace(p);if(req.body?.revision!==old.revision)fail('配方已更新，请刷新后添加。',409);
+  let next:LoopWorkspace=old;try{next=installSceneLoops(old);}catch(e){fail((e as Error).message);}
+  if(next===old){res.json(old);return;}next.revision=old.revision+1;store.put('loop-workspaces',p.id,next);res.json(next);
  });
  app.post('/api/projects/:id/loop/jobs',(req,res)=>{
   const p=getProject(String(req.params.id)),b=object(req.body),key=id(b.requestId);
@@ -43,11 +48,11 @@ export function registerLoopRoutes(app:Express,store:Store,images:Images,{fail,g
   const signature=JSON.stringify({projectId:p.id,kind:'loop',revision:b.revision,recipeIds});
   const prior=deduplicate(key,signature);if(prior)return res.json({jobs:prior});
   const w=workspace(p);if(w.revision!==b.revision)fail('配方已更新，请刷新后生成。',409);
-  const referenceId=reference(w.masterAssetId);if(!referenceId)fail('先上传或选择角色母版。');
   const settings=config();if(!settings.apiKey)fail('先配置循环 GIF 的 RunningHub 会员连接。');
   const recipes=recipeIds.map((rid:string)=>w.recipes.find(r=>r.id===rid)||fail('动作不存在。'));
   const records:StoredJob[]=recipes.map((r:any)=>{
-   const snapshot=structuredClone(settings);snapshot.runninghub!.extraNodes=[{nodeId:'10',fieldName:'noise_seed',fieldValue:seed(r.seed)}];
+   const referenceId=reference(r.referenceAssetId??w.masterAssetId);if(!referenceId)fail(`「${r.name}」需要场景参考图或角色母版。`);
+   const snapshot=structuredClone(settings);snapshot.runninghub!.extraNodes=[{nodeId:'10',fieldName:'noise_seed',fieldValue:seed(r.seed)},{nodeId:'37',fieldName:'keep_proportion',fieldValue:'pad'},{nodeId:'37',fieldName:'pad_color',fieldValue:'255, 255, 255'}];
    const date=new Date().toISOString();return {job:{id:randomUUID(),projectId:p.id,kind:'loop',reactionId:r.id,name:r.name,prompt:r.prompt,seed:r.seed,status:'queued',createdAt:date,updatedAt:date,provider:'runninghub',model:snapshot.model,textMode:'none'},settings:snapshot,referenceId};
   });res.status(201).json({jobs:saveBatch(key,signature,records)});
  });

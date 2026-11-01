@@ -54,15 +54,16 @@ Host 使用主机名白名单；Origin 必须同源或在允许列表内，Sec-F
 | PUT /api/loop/settings | `{baseUrl?,apiKey?,clearApiKey?}`；仅 RH 官方 .ai/.cn，切换站点清除旧密钥 |
 | GET /api/projects/:id/loop | LoopWorkspace；首次从动态母版或角色母版初始化 |
 | PUT /api/projects/:id/loop | 完整工作区、revision 必填；旧版本 409 |
+| POST /api/projects/:id/loop/scene-pack | `{revision}` → 保留旧配方并加入缺少的10款情景，取消旧选择并选择新增项；重复调用不改数据 |
 | POST /api/projects/:id/loop/jobs | `{revision,recipeIds,requestId}` → `{jobs}`；复用主任务队列 |
 | POST /api/projects/:id/loop/import | `{name,recipeId,dataUrl,requestId,prompt?}` → 成功的导入 Job；GIF ≤15MB |
 | GET /api/projects/:id/loop/export | 每个动作的最新成功 GIF、提示词与元数据 ZIP；size=original（默认）或 256 |
 
-`LoopWorkspace={version:1,revision,masterAssetId?,recipes:[{id,name,prompt,seed,selected}]}`。1–30 条配方；prompt 最大 12000 字；seed 为 64 位无符号十进制**字符串**。角色母版必须是静态素材。请求编号与修订号防止重复付费和过期提交；入队时冻结提示词、图片 ID、种子、独立连接设置。重启与 `/api/jobs/:id/resume` 沿用原远程任务 ID。循环任务不使用通用 retry，需在循环页显式发起新一轮。
+`LoopWorkspace={version:1,revision,masterAssetId?,recipes:[{id,name,prompt,seed,selected,referenceAssetId?}]}`。1–30 条配方；prompt 最大 12000 字；seed 为 64 位无符号十进制**字符串**。角色母版和每条 referenceAssetId 都必须是静态素材。入队按「此条 referenceAssetId → masterAssetId」解析参考，每条均有图才原子入队；无母版但每条有专图也可运行。请求编号与修订号防止重复付费和过期提交；入队时冻结提示词、图片 ID、种子、独立连接设置。重启与 `/api/jobs/:id/resume` 沿用原远程任务 ID。循环任务不使用通用 retry，需在循环页显式发起新一轮。
 
 循环 Job 使用 `kind:'loop'`、`reactionId` 对应配方 ID、可选 `seed` 字符串。GIF Asset 增加 `format:'gif',frames,durationMs,loop`；旧 PNG 不要求这些字段。GIF 保存不重编码，最多 40MB、1000 帧、2 亿总像素，拒绝静态或缺失时长的 GIF。`/api/jobs/:id/render` 对 GIF 默认返回原动画；显式 size 可缩放动画、保留时长及循环次数，不放大，不支持后期排字。普通 `/api/assets` 仍把上传图片规范化为 PNG；导入动画须使用 loop/import。
 
-内置映射只针对已发布工作流 `2116526206026842114`：prompt `8.value`、image `7.image`、seed `10.noise_seed`，输出索引 0。运行前核对会员类型 NORMAL 和账户空位；不支持在此端点任意替换 workflow ID 或节点。
+内置映射只针对已发布工作流 `2116526206026842114`：prompt `8.value`、image `7.image`、seed `10.noise_seed`，输出索引 0；额外覆盖 `37.keep_proportion=pad` 和 `37.pad_color=255, 255, 255`，等比补白成方形。运行前核对会员类型 NORMAL 和账户空位；不支持在此端点任意替换 workflow ID 或节点。
 
 ## 项目与反应字段
 
