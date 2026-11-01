@@ -6,7 +6,7 @@ import type { ProviderSettings, RunningHubSettings, RunningHubNode } from '../sr
 export class ProviderError extends Error {
   constructor(message:string, readonly uncertain=false) { super(message); }
 }
-export interface GenerationInput { settings:ProviderSettings; prompt:string; reference?:Buffer; secondaryReference?:Buffer; signal:AbortSignal; remoteTaskId?:string; onRemoteTaskId?:(id:string)=>void|Promise<void>; }
+export interface GenerationInput { settings:ProviderSettings; prompt:string; reference?:Buffer; secondaryReference?:Buffer; signal:AbortSignal; remoteTaskId?:string; onRemoteTaskId?:(id:string)=>void|Promise<void>; requireMembership?:boolean; }
 export interface ImageProvider { generate(input:GenerationInput):Promise<Buffer>; }
 export const providerDocs = {
  openai:'https://developers.openai.com/api/reference/resources/images',
@@ -162,6 +162,16 @@ async function generateRunningHub(input:GenerationInput,dependencies:RunningHubD
  };
  try{
   if(!taskId){
+   if(input.requireMembership){
+    while(true){
+     const account=await request('/uc/openapi/accountStatus',JSON.stringify({apiKey:settings.apiKey}));
+     if(account.apiType!=='NORMAL')throw new ProviderError('循环 GIF 需要 Consumer-Membership 会员 Key（NORMAL），未提交生成。');
+     const count=Number(account.currentTaskCounts);
+     if(!Number.isFinite(count)||count<0)throw new ProviderError('无法确认 RunningHub 占用，未提交生成。');
+     if(count<3)break;
+     await waitForPoll(10000,controller);
+    }
+   }
    const nodes:RunningHubNode[]=[{...config.promptNode,fieldValue:prompt}];
    const uploadReference=async(bytes:Buffer,node:RunningHubNode,filename:string)=>{
     const form=new FormData();form.set('file',new Blob([new Uint8Array(bytes)],{type:'image/png'}),filename);

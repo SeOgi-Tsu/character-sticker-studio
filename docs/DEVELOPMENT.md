@@ -28,6 +28,8 @@ npm start
 | --- | --- |
 | [src/App.tsx](../src/App.tsx) | 项目切换、保存、生成/导入、导航和顶层状态 |
 | `src/components/` | 引导、角色/母版候选、表情编辑、设置与导出界面 |
+| `src/shared/loop.ts`、`loop-presets.json` | 循环 GIF 的通用动作、完整 H3 提示词与固定发布图映射 |
+| `server/loop.ts` | 循环配方、会员设置、向现有队列入队、GIF 导入和打包 |
 | `src/lib/` | HTTP 客户端、浏览器偏好、角色引用变更和任务操作辅助 |
 | [src/shared/types.ts](../src/shared/types.ts) | 前后端共用类型 |
 | [src/shared/catalog.ts](../src/shared/catalog.ts) | 反应、画风、构图、互动、选集和人格预设 |

@@ -6,7 +6,7 @@ import { canResumeJob } from './lib/jobs';
 import { Field, Modal, Status } from './components/Common';
 import CharacterView from './components/CharacterView';
 import NijiWorkshop from './components/NijiWorkshop';
-import VideoWorkshop from './components/VideoWorkshop';
+import VideoWorkshop from './components/MotionWorkshop';
 import Settings from './components/Settings';
 import StickerInspector from './components/StickerInspector';
 import { captionStyles, defaultCaptionFor } from './shared/typography';
@@ -257,7 +257,7 @@ export default function App() {
     });
   }
   async function cancel(job: Job) { await run(async () => { const cancelled = await post<Job>(`/api/jobs/${job.id}/cancel`); setJobs(existing => withJobs(existing, [cancelled])); notify(job.status === 'running' ? '已请求停止；上游是否收费请查看任务说明。' : '已取消排队任务。'); }); }
-  async function downloadJob(job: Job) { await run(async () => { await saveAll(); await download(job.kind === 'sticker' ? `/api/jobs/${job.id}/render?size=original&caption=1` : job.asset!.url, `${job.name}.png`); }); }
+  async function downloadJob(job: Job) { await run(async () => { await saveAll(); await download(job.kind === 'sticker' ? `/api/jobs/${job.id}/render?size=original&caption=1` : job.asset!.url, `${job.name}.${job.asset?.format==='gif'?'gif':'png'}`); }); }
   async function openPreview(job: Job) { await run(async () => { await saveAll(); setPreview(job); }); }
   async function exportRecipe() { await run(async () => { const current = await saveAll(); await download(`/api/projects/${current.id}/recipe`, `${current.character.name || 'character'}-recipe.json`); notify('配方已导出；参考图请单独保存。'); }); }
   async function exportZip(captions: boolean, size: ExportSize) { await run(async () => { const current = await saveAll(); await download(`/api/projects/${current.id}/export?captions=${captions ? 1 : 0}&size=${size}`, `${current.character.name || 'character'}-stickers.zip`); }); }

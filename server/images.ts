@@ -90,8 +90,24 @@ async function captionLayer(caption:Caption,canvasWidth:number,canvasHeight:numb
 export class Images {
  readonly directory:string;
  constructor(readonly store:Store){this.directory=join(store.dataDir,'assets');mkdirSync(this.directory,{recursive:true,mode:0o700});}
- path(id:string){if(!/^[\da-f-]{36}$/.test(id))throw new Error('图片编号无效。');return join(this.directory,`${id}.png`);}
+ path(id:string){if(!/^[\da-f-]{36}$/.test(id))throw new Error('图片编号无效。');return join(this.directory,`${id}.${this.store.get<Asset>('assets',id)?.format==='gif'?'gif':'png'}`);}
+ /** Keep the original animated bytes: PNG normalization would silently discard all but frame one. */
+ async saveGif(buffer:Buffer,filename:string,provenance?:string):Promise<Asset>{
+  if(buffer.length>40*1024*1024||!/^GIF8[79]a$/.test(buffer.subarray(0,6).toString()))throw new Error('需要 40 MB 以内的 GIF 文件。');
+  const meta=await sharp(buffer,{animated:true,limitInputPixels:200_000_000}).metadata();
+  const frames=meta.pages??1,width=meta.width??0,height=meta.pageHeight??meta.height??0;
+  if(meta.format!=='gif'||frames<2||frames>1000||width<1||height<1||width*height*frames>200_000_000)throw new Error('需要有效的多帧 GIF，最多 1000 帧、总像素 2 亿。');
+  const durationMs=(meta.delay??[]).reduce((a,b)=>a+b,0);
+  if(!durationMs)throw new Error('GIF 缺少有效的帧时长。');
+  const id=randomUUID(),asset:Asset={id,url:`/assets-local/${id}.gif`,filename:exportName(filename.replace(/\.[^.]+$/,'')+'.gif'),width,height,hasAlpha:meta.hasAlpha===true,format:'gif',frames,durationMs,loop:meta.loop,provenance,contentHash:`sha256:${createHash('sha256').update(buffer).digest('hex')}`};
+  await writeFile(join(this.directory,`${id}.gif`),buffer,{mode:0o600});this.store.put('assets',id,asset);return asset;
+ }
  async load(id:string){if(!this.store.get<Asset>('assets',id))throw new Error('找不到参考图，请重新上传。');return readFile(this.path(id));}
+ async renderGif(asset:Asset,size:ExportSize='original'){
+  if(asset.format!=='gif')throw new Error('需要多帧 GIF 素材。');
+  const input=await this.load(asset.id);if(size==='original')return input;
+  return sharp(input,{animated:true,limitInputPixels:200_000_000}).resize({width:size,withoutEnlargement:true}).gif({colours:128,effort:7}).toBuffer();
+ }
  async withContentHash(id:string):Promise<Asset>{
   const asset=this.store.get<Asset>('assets',id);if(!asset)throw new Error('找不到参考图，请重新上传。');
   if(asset.contentHash)return asset;

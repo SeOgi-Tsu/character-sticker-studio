@@ -33,13 +33,14 @@ export interface Project {
   customReactions: Reaction[]; overrides: Record<string, Partial<Reaction>>;
   captions: Record<string, Caption>; createdAt: string; updatedAt: string;
 }
-export interface Asset { id: string; url: string; filename: string; width: number; height: number; hasAlpha: boolean; provenance?: string; contentHash?: string; }
+export interface Asset { id: string; url: string; filename: string; width: number; height: number; hasAlpha: boolean; provenance?: string; contentHash?: string; format?: 'gif'; frames?: number; durationMs?: number; loop?: number; }
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'unknown';
 export interface Job {
-  id: string; projectId: string; kind: 'sticker' | 'anchor' | 'character';
+  id: string; projectId: string; kind: 'sticker' | 'anchor' | 'character' | 'loop';
   reactionId?: string; name: string; prompt: string; status: JobStatus;
   asset?: Asset; error?: string; createdAt: string; updatedAt: string; model: string; provider: string;
   remoteTaskId?: string;
+  seed?: string;
   textMode?: TextMode; generatedText?: string;
 }
 export interface RunningHubNode { nodeId: string; fieldName: string; fieldValue?: string; }
